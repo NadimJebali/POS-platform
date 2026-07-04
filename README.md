@@ -8,8 +8,8 @@ to this server to **activate** and to **renew** its short-lived, machine-bound l
 
 ## Status
 
-Tracer bullet (issue #6): schema, keypair, and `POST /activate`. Renewal, admin,
-rebind, and the update feed follow in later slices.
+Activation (#6) and renewal (#7) are in. Admin, rebind, and the update feed follow
+in later slices.
 
 ## Requirements
 
@@ -47,6 +47,29 @@ Success `200`: `{ "license_key": "<base64payload>.<base64sig>", "exp": 175000000
 Errors (each has a stable `error` code): `invalid_code` (404), `suspended` /
 `revoked` (403), `machine_limit` (409, license already on another machine — the app
 offers rebind), `bad_request` (400).
+
+### `POST /renew`
+
+Exchange the current signed key for a fresh one. Self-authenticating: the server
+verifies the presented key against its own public key, so there is no client secret.
+The presented key's expiry is **not** checked — a long-offline machine with a genuine
+but expired key still renews if its license is in good standing (offline gap recovery).
+
+Request:
+
+```json
+{ "license_key": "<current key>", "machineId": "ABCD-1234-EF56", "appVersion": "0.2.0" }
+```
+
+Success `200`: `{ "license_key": "<fresh key>", "exp": 1750000000000, "graceUntil": null }`.
+When the subscription has lapsed but is within the grace window, `graceUntil` is set
+(epoch ms) — the renewal still succeeds so the register keeps working, and the app
+shows a "please renew" banner.
+
+Errors: `invalid_key` (401, bad/forged signature or unknown license), `machine_mismatch`
+(403), `unbound` (403, machine rebound away), `suspended` / `revoked` (403), `lapsed`
+(403, past the grace window). `paid_until` is derived from the append-only payments
+ledger, never stored.
 
 ## License format
 

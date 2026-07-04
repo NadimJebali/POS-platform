@@ -30,3 +30,10 @@ export function insertLicense(db, { customerId, status = 'active', maxMachines =
     .run(customerId, code, status, maxMachines, name, Date.now())
   return { id: Number(info.lastInsertRowid), code }
 }
+
+// Appends a payment to the ledger. `months` of coverage (1 or 12), dated `createdAt`.
+export function insertPayment(db, { licenseId, months = 1, method = 'cash', createdAt = Date.now() }) {
+  db.prepare(
+    'INSERT INTO payments (license_id, amount_millimes, method, months, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(licenseId, 0, method, months, createdAt)
+}

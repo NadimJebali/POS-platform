@@ -34,8 +34,13 @@ export function verifyLicense(licenseString, publicKey) {
 // Builds the payload for a freshly issued/renewed license. `now` and the windows
 // are passed in so callers stay testable and all policy comes from the DB settings.
 // exp/graceUntil are epoch ms, matching the app's Date.now() comparison.
-export function buildPayload({ machineId, name, now, renewalWindowDays, warnDays, graceUntil }) {
+//
+// `lid` (license id) is embedded so the renew endpoint can identify which license a
+// presented key belongs to. It's an internal integer, not the activation code, so
+// exposing it in the (readable) payload is harmless. The app's verifier ignores it.
+export function buildPayload({ lid, machineId, name, now, renewalWindowDays, warnDays, graceUntil }) {
   const payload = {
+    lid,
     machineId,
     name: name || null,
     exp: now + renewalWindowDays * 86400000,
