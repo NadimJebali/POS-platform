@@ -121,10 +121,10 @@ Two workflows in `.github/workflows/`:
 **Prerequisites (GitHub → repo → Settings):**
 
 - Variables: `DOMAIN`, `DROPLET_REGION`, `DROPLET_SIZE`, `SPACES_BUCKET`,
-  `SPACES_ENDPOINT`, `SSH_PUBLIC_KEY`.
+  `SPACES_ENDPOINT`, `SSH_PUBLIC_KEY`, `DOCKERHUB_USERNAME`.
 - Secrets: `DO_API_TOKEN`, `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY`,
   `SSH_PRIVATE_KEY`, `LICENSE_PRIVATE_KEY`, `ADMIN_PASSWORD_HASH`,
-  `DOCKERHUB_USERNAME`, **`DOCKERHUB_TOKEN`** (a Docker Hub access token — add this).
+  **`DOCKERHUB_TOKEN`** (a Docker Hub access token — add this).
 - Make the `pos-platform` Docker Hub repo **public** (the image only contains code
   that's already public on GitHub), so the droplet pulls it without logging in.
 - `LICENSE_PRIVATE_KEY` secret must be the **single-line, `\n`-escaped** private key
