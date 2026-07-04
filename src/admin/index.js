@@ -160,7 +160,8 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
       try {
         const { code } = issueLicense(db, {
           customerId,
-          maxMachines: Number(request.body?.max_machines) || 1
+          maxMachines: Number(request.body?.max_machines) || 1,
+          months: Number(request.body?.months) || undefined
         })
         // Redirect with the fresh code so the page can show it once, prominently.
         return reply.redirect(`/admin/customers/${customerId}?code=${encodeURIComponent(code)}`)

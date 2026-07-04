@@ -169,6 +169,7 @@ export function customerPage({ customer, licenses, newCode, error }) {
         : `<div class="card"><h2>Issue a license</h2>
       <form class="inline" method="post" action="/admin/customers/${customer.id}/licenses">
         <div><label for="max">Machines (seats)</label><input id="max" name="max_machines" type="number" min="1" value="1"></div>
+        <div><label for="months">Start subscription</label><select id="months" name="months"><option value="0">None (mark paid later)</option><option value="1">1 month</option><option value="12">1 year</option></select></div>
         <button>Issue license</button>
       </form>
     </div>`
