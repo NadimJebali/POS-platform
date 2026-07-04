@@ -113,7 +113,7 @@ export function customersPage({ customers, search, error, archived = false }) {
   return layout('Customers', body)
 }
 
-export function customerPage({ customer, licenses, newCode, error }) {
+export function customerPage({ customer, licenses, newCode, newLicenseId, error }) {
   const archived = !!customer.archived_at
   const licRows = licenses
     .map(
@@ -133,10 +133,27 @@ export function customerPage({ customer, licenses, newCode, error }) {
   const renewalNotice = needRenewal.length
     ? `<div class="notice bad">⚠ ${needRenewal.length} license${needRenewal.length > 1 ? 's' : ''} need renewal (expired or in grace).</div>`
     : ''
+  // After issuing, the banner asks whether the customer paid — the moment the sale
+  // actually settles. The buttons record the first payment straight into the ledger
+  // and return here; "Not yet" just clears the banner (license stays "Never paid",
+  // recordable later from the license page).
+  const paidPrompt = newLicenseId
+    ? `<h2>Has the customer paid?</h2>
+       <form method="post" action="/admin/licenses/${newLicenseId}/payments" style="display:inline">
+         <input type="hidden" name="months" value="1"><input type="hidden" name="method" value="initial">
+         <input type="hidden" name="back" value="/admin/customers/${customer.id}">
+         <button>Paid — 1 month</button></form>
+       <form method="post" action="/admin/licenses/${newLicenseId}/payments" style="display:inline">
+         <input type="hidden" name="months" value="12"><input type="hidden" name="method" value="initial">
+         <input type="hidden" name="back" value="/admin/customers/${customer.id}">
+         <button>Paid — 1 year</button></form>
+       <a href="/admin/customers/${customer.id}"><button type="button" class="secondary">Not yet</button></a>`
+    : ''
   const banner = newCode
     ? `<div class="card"><h2>License issued — hand this code to the customer</h2>
        <p class="code">${esc(formatActivationCode(newCode))}</p>
-       <p class="muted">They type it into the app's Activate screen. It won't be shown this prominently again.</p></div>`
+       <p class="muted">They type it into the app's Activate screen. It won't be shown this prominently again.</p>
+       ${paidPrompt}</div>`
     : ''
 
   // Lifecycle controls: archive a churned customer (reversible, keeps records), or —
@@ -169,9 +186,9 @@ export function customerPage({ customer, licenses, newCode, error }) {
         : `<div class="card"><h2>Issue a license</h2>
       <form class="inline" method="post" action="/admin/customers/${customer.id}/licenses">
         <div><label for="max">Machines (seats)</label><input id="max" name="max_machines" type="number" min="1" value="1"></div>
-        <div><label for="months">Start subscription</label><select id="months" name="months"><option value="0">None (mark paid later)</option><option value="1">1 month</option><option value="12">1 year</option></select></div>
         <button>Issue license</button>
       </form>
+      <p class="muted">You'll be asked whether the customer paid right after the code is generated.</p>
     </div>`
     }
     ${lifecycle}`

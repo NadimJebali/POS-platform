@@ -105,7 +105,8 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
       if (!customer) return sendHtml(reply, loginPage({ error: 'No such customer' }), 404)
       const licenses = listLicensesForCustomer(db, customer.id)
       const newCode = request.query?.code || null
-      return sendHtml(reply, customerPage({ customer, licenses, newCode }))
+      const newLicenseId = Number(request.query?.lid) || null
+      return sendHtml(reply, customerPage({ customer, licenses, newCode, newLicenseId }))
     })
 
     // Show a customer detail page, optionally with an error.
@@ -158,13 +159,13 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
     admin.post('/admin/customers/:id/licenses', async (request, reply) => {
       const customerId = Number(request.params.id)
       try {
-        const { code } = issueLicense(db, {
+        const { id, code } = issueLicense(db, {
           customerId,
-          maxMachines: Number(request.body?.max_machines) || 1,
-          months: Number(request.body?.months) || undefined
+          maxMachines: Number(request.body?.max_machines) || 1
         })
-        // Redirect with the fresh code so the page can show it once, prominently.
-        return reply.redirect(`/admin/customers/${customerId}?code=${encodeURIComponent(code)}`)
+        // Redirect with the fresh code (shown once, prominently) and the license id so
+        // the banner can ask "has the customer paid?" and record against the ledger.
+        return reply.redirect(`/admin/customers/${customerId}?code=${encodeURIComponent(code)}&lid=${id}`)
       } catch (err) {
         if (err instanceof LicenseError) {
           const customer = getCustomer(db, customerId)
@@ -199,7 +200,10 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
         // The form takes TND; store millimes (integers) to match the app's money model.
         const amountMillimes = Math.round((Number(request.body?.amount) || 0) * 1000)
         recordPayment(db, { licenseId: id, months, amountMillimes, method: request.body?.method })
-        return reply.redirect(`/admin/licenses/${id}`)
+        // The post-issue banner sends `back` to return to the customer page. Only
+        // in-admin paths are honored (open-redirect guard).
+        const back = String(request.body?.back || '')
+        return reply.redirect(back.startsWith('/admin/') ? back : `/admin/licenses/${id}`)
       } catch (err) {
         return showLicense(reply, id, { error: err.message, status: 400 })
       }

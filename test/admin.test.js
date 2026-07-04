@@ -122,7 +122,8 @@ test('issuing a license shows its code, and that code activates', async () => {
   assert.match(page.body, /hand this code to the customer/)
 
   // And that same code actually activates a machine (end-to-end through /activate).
-  const code = decodeURIComponent(issued.headers.location.split('code=')[1])
+  // Parse the query properly — the redirect also carries &lid= for the paid prompt.
+  const code = new URL(issued.headers.location, 'http://x').searchParams.get('code')
   const act = await app.inject({
     method: 'POST',
     url: '/activate',

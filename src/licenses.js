@@ -3,7 +3,7 @@
 import { getIntSetting } from './db.js'
 import { generateActivationCode, normalizeActivationCode } from './activation-code.js'
 import { signLicense, verifyLicense, buildPayload } from './license-format.js'
-import { derivePaidUntil, listPayments, billingState, recordPayment } from './payments.js'
+import { derivePaidUntil, listPayments, billingState } from './payments.js'
 
 // A domain error carrying a stable machine-readable `code` so the HTTP layer can map
 // each failure to a distinct response and the app can branch on it (e.g. bound
@@ -25,9 +25,8 @@ function countActiveMachines(db, licenseId) {
 
 // Issues a new license for a customer with a fresh unique activation code. Retries
 // on the astronomically unlikely code collision rather than trusting first draw.
-// `months` (optional, 1 or 12) records a first payment so the subscription starts
-// Active instead of "Never paid".
-export function issueLicense(db, { customerId, maxMachines = 1, name, months }, now = Date.now()) {
+// The first payment is recorded separately (the admin is prompted right after issue).
+export function issueLicense(db, { customerId, maxMachines = 1, name }, now = Date.now()) {
   if (!getCustomerExists(db, customerId)) {
     throw new LicenseError('bad_request', 'Unknown customer', 400)
   }
@@ -44,9 +43,6 @@ export function issueLicense(db, { customerId, maxMachines = 1, name, months }, 
         )
         .run(customerId, code, 'active', seats, name ?? null, now)
       const id = Number(info.lastInsertRowid)
-      if (months === 1 || months === 12) {
-        recordPayment(db, { licenseId: id, months, method: 'initial' }, now)
-      }
       return { id, code }
     } catch (err) {
       if (!String(err.message).includes('UNIQUE')) throw err
