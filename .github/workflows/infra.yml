@@ -1,0 +1,52 @@
+name: infra
+
+# Provision/adjust the droplet, reserved IP, firewall, and DNS record with Terraform.
+# MANUAL trigger only — infrastructure should never change on a code push. Choose
+# "plan" to preview or "apply" to make changes. State lives in DO Spaces (see
+# terraform/backend.tf); create that Space once before the first run.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Terraform action
+        type: choice
+        options: [plan, apply]
+        default: plan
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      # Provider + variables
+      TF_VAR_do_token: ${{ secrets.DO_API_TOKEN }}
+      TF_VAR_ssh_public_key: ${{ vars.SSH_PUBLIC_KEY }}
+      # Credentials for the S3-compatible state backend (DO Spaces)
+      AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - run: terraform init
+      - run: terraform validate
+
+      - name: Plan
+        if: ${{ inputs.action == 'plan' }}
+        run: terraform plan -input=false
+
+      - name: Apply
+        if: ${{ inputs.action == 'apply' }}
+        run: terraform apply -input=false -auto-approve

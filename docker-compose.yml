@@ -3,7 +3,11 @@
 # survives container rebuilds. `docker compose up -d` after populating .env.
 services:
   api:
+    # In CI the image is built and pushed, and IMAGE is set in .env so the droplet
+    # pulls it (`docker compose pull`) rather than building on a small box. Locally,
+    # IMAGE is unset so `docker compose up --build` builds `pos-platform:local`.
     build: .
+    image: ${IMAGE:-pos-platform:local}
     restart: unless-stopped
     env_file: .env
     environment:

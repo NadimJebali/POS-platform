@@ -107,11 +107,41 @@ hashed. Create a customer, issue a license, and confirm the activation code work
 4. **Restore drill (do this once):** download a `.gz` from Spaces, `gunzip` it, and
    open it with `sqlite3 <file> '.tables'` to confirm the data is intact.
 
-## 7. Updates and app wiring (later)
+## 7. CI/CD (GitHub Actions)
 
-- Redeploy after a code change: `git pull && docker compose up -d --build`.
-- The `/updates/*` static feed for app auto-update (POS-software #24) will be added to
-  the `Caddyfile` when that slice ships.
+Two workflows in `.github/workflows/`:
+
+- **`infra.yml`** (manual only) — `terraform plan`/`apply` for the droplet, reserved
+  IP, firewall, and DNS record. State lives in a `pos-platform-tfstate` Space
+  (create it first; see `terraform/backend.tf`).
+- **`deploy.yml`** (on push to `main`, or manual) — builds the Docker image, pushes it
+  to Docker Hub, then SSHes into the droplet to write `.env` from secrets, `docker
+  compose pull`, and restart. No building on the droplet.
+
+**Prerequisites (GitHub → repo → Settings):**
+
+- Variables: `DOMAIN`, `DROPLET_REGION`, `DROPLET_SIZE`, `SPACES_BUCKET`,
+  `SPACES_ENDPOINT`, `SSH_PUBLIC_KEY`.
+- Secrets: `DO_API_TOKEN`, `SPACES_ACCESS_KEY`, `SPACES_SECRET_KEY`,
+  `SSH_PRIVATE_KEY`, `LICENSE_PRIVATE_KEY`, `ADMIN_PASSWORD_HASH`,
+  `DOCKERHUB_USERNAME`, **`DOCKERHUB_TOKEN`** (a Docker Hub access token — add this).
+- Make the `pos-platform` Docker Hub repo **public** (the image only contains code
+  that's already public on GitHub), so the droplet pulls it without logging in.
+- `LICENSE_PRIVATE_KEY` secret must be the **single-line, `\n`-escaped** private key
+  (the value from keygen, without surrounding quotes).
+
+First run order: **infra** (once) → the droplet boots and cloud-init clones the repo →
+push to `main` fires **deploy**.
+
+## 8. Manual redeploy (no CI)
+
+`cd /root/pos-platform && git pull && docker compose up -d --build` builds locally
+instead of pulling. Handy for a quick fix or if CI is unavailable.
+
+## App wiring (later)
+
+- The `/updates/*` static feed for app auto-update (POS-software #24) gets added to the
+  `Caddyfile` when that slice ships.
 - Rebuild the POS app with the public key from step 4 and the base URL
   `https://pos.nadimjebali.engineer` (POS-software #18).
 
