@@ -3,7 +3,7 @@
 import { getIntSetting } from './db.js'
 import { generateActivationCode, normalizeActivationCode } from './activation-code.js'
 import { signLicense, verifyLicense, buildPayload } from './license-format.js'
-import { derivePaidUntil, listPayments } from './payments.js'
+import { derivePaidUntil, listPayments, billingState } from './payments.js'
 
 // A domain error carrying a stable machine-readable `code` so the HTTP layer can map
 // each failure to a distinct response and the app can branch on it (e.g. bound
@@ -170,21 +170,35 @@ function bindMachine(db, license, existingRow, machineId, appVersion, now) {
   }
 }
 
-// Licenses for a customer, each annotated with its derived paid_until and current
-// bound-machine count — enough for the customer detail page.
+// Resolves the billing-window thresholds (in ms) from the settings table.
+function billingThresholds(db, now = Date.now()) {
+  return {
+    now,
+    graceMs: getIntSetting(db, 'grace_days') * 86400000,
+    warnMs: getIntSetting(db, 'warn_days') * 86400000
+  }
+}
+
+// Licenses for a customer, each annotated with derived paid_until, its billing state
+// (active / expiring / grace / lapsed / unpaid), and current bound-machine count.
 export function listLicensesForCustomer(db, customerId) {
   const rows = db
     .prepare('SELECT * FROM licenses WHERE customer_id = ? ORDER BY created_at DESC')
     .all(customerId)
-  return rows.map((lic) => ({
-    ...lic,
-    paidUntil: derivePaidUntil(db, lic.id),
-    activeMachines: countActiveMachines(db, lic.id)
-  }))
+  const t = billingThresholds(db)
+  return rows.map((lic) => {
+    const paidUntil = derivePaidUntil(db, lic.id)
+    return {
+      ...lic,
+      paidUntil,
+      billing: billingState(paidUntil, t),
+      activeMachines: countActiveMachines(db, lic.id)
+    }
+  })
 }
 
-// Full detail for one license: the license, its customer, derived paid_until, and its
-// machines (active bindings first, then unbound history) with last-seen/version.
+// Full detail for one license: the license, its customer, derived paid_until, its
+// billing state, and its machines (active bindings first, then unbound history).
 export function getLicenseDetail(db, id) {
   const license = getLicense(db, id)
   if (!license) return null
@@ -194,11 +208,13 @@ export function getLicenseDetail(db, id) {
       'SELECT * FROM machines WHERE license_id = ? ORDER BY (unbound_at IS NOT NULL), last_seen_at DESC'
     )
     .all(id)
+  const paidUntil = derivePaidUntil(db, id)
   return {
     license,
     customer,
     machines,
-    paidUntil: derivePaidUntil(db, id),
+    paidUntil,
+    billing: billingState(paidUntil, billingThresholds(db)),
     payments: listPayments(db, id),
     transfers: listTransfers(db, id)
   }

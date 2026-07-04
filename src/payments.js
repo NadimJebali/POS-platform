@@ -27,6 +27,23 @@ export function listPayments(db, licenseId) {
     .all(licenseId)
 }
 
+// Classifies a subscription's standing from its derived paid_until, mirroring what
+// /renew enforces, so the admin can see at a glance who needs to renew:
+//   unpaid    — never paid (needs a first payment)
+//   active    — paid up, comfortably ahead
+//   expiring  — paid but within the warn window of running out
+//   grace     — past paid_until but still inside the paid-grace window
+//   lapsed    — past the grace window; renewals are now refused
+// `daysLeft` is whole days until paid_until (negative once past it).
+export function billingState(paidUntil, { now, graceMs, warnMs }) {
+  if (paidUntil == null) return { state: 'unpaid', label: 'Never paid', daysLeft: null }
+  const daysLeft = Math.ceil((paidUntil - now) / 86400000)
+  if (now > paidUntil + graceMs) return { state: 'lapsed', label: 'Expired — needs renewal', daysLeft }
+  if (now > paidUntil) return { state: 'grace', label: 'In grace — renew now', daysLeft }
+  if (paidUntil - now <= warnMs) return { state: 'expiring', label: `Expiring in ${daysLeft}d`, daysLeft }
+  return { state: 'active', label: 'Active', daysLeft }
+}
+
 // Derives the moment coverage runs out for a license, or null if it has never been
 // paid. Each payment extends coverage from the later of (current coverage end,
 // the payment's own date): stacking prepayments extends cleanly, and a lapse

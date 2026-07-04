@@ -20,6 +20,14 @@ function statusBadge(status) {
   return `<span class="badge ${esc(status)}">${esc(status)}</span>`
 }
 
+// Maps a billing state to a coloured badge: green = fine, amber = attention,
+// red = expired / unpaid.
+const BILLING_SEVERITY = { active: 'ok', expiring: 'warn', grace: 'warn', lapsed: 'bad', unpaid: 'bad' }
+function billingBadge(billing) {
+  if (!billing) return '—'
+  return `<span class="badge ${BILLING_SEVERITY[billing.state] || 'warn'}">${esc(billing.label)}</span>`
+}
+
 const STYLE = `
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -36,6 +44,10 @@ const STYLE = `
   button.secondary { background: transparent; color: inherit; }
   .badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid currentColor; text-transform: uppercase; }
   .badge.active { color: #16a34a; } .badge.suspended { color: #d97706; } .badge.revoked { color: #dc2626; }
+  .badge.ok { color: #16a34a; } .badge.warn { color: #d97706; } .badge.bad { color: #dc2626; }
+  .notice { padding: .6rem .8rem; border-radius: 8px; margin: .5rem 0; }
+  .notice.warn { background: #d977061a; border: 1px solid #d9770655; }
+  .notice.bad { background: #dc26261a; border: 1px solid #dc262655; }
   .code { font-family: ui-monospace, monospace; font-size: 1.1rem; letter-spacing: .04em; background: #8882; padding: .5rem .7rem; border-radius: 6px; display: inline-block; }
   .card { border: 1px solid #8884; border-radius: 10px; padding: 1rem; margin: 1rem 0; }
   .err { color: #dc2626; } .muted { color: #8a8a8a; font-size: .85rem; }
@@ -108,11 +120,19 @@ export function customerPage({ customer, licenses, newCode, error }) {
       (l) => `<tr>
         <td><a href="/admin/licenses/${l.id}">#${l.id}</a></td>
         <td>${statusBadge(l.status)}</td>
+        <td>${billingBadge(l.billing)}</td>
         <td>${l.activeMachines}/${l.max_machines}</td>
         <td>${fmtDate(l.paidUntil)}</td>
         <td class="muted">${esc(formatActivationCode(l.activation_code))}</td></tr>`
     )
     .join('')
+  // Surface renewal pressure at the top of the customer page too.
+  const needRenewal = licenses.filter(
+    (l) => l.status === 'active' && l.billing && ['grace', 'lapsed'].includes(l.billing.state)
+  )
+  const renewalNotice = needRenewal.length
+    ? `<div class="notice bad">⚠ ${needRenewal.length} license${needRenewal.length > 1 ? 's' : ''} need renewal (expired or in grace).</div>`
+    : ''
   const banner = newCode
     ? `<div class="card"><h2>License issued — hand this code to the customer</h2>
        <p class="code">${esc(formatActivationCode(newCode))}</p>
@@ -138,10 +158,11 @@ export function customerPage({ customer, licenses, newCode, error }) {
     ${error ? `<p class="err">${esc(error)}</p>` : ''}
     <h2>${esc(customer.name)} ${archived ? '<span class="badge suspended">archived</span>' : ''}</h2>
     <p class="muted">${esc(customer.phone) || 'no phone'} · ${esc(customer.city) || 'no city'} · added ${fmtDate(customer.created_at)}</p>
+    ${renewalNotice}
     ${banner}
     <h2>Licenses (${licenses.length})</h2>
-    <table><thead><tr><th>ID</th><th>Status</th><th>Machines</th><th>Paid until</th><th>Code</th></tr></thead>
-    <tbody>${licRows || '<tr><td colspan="5" class="muted">No licenses yet.</td></tr>'}</tbody></table>
+    <table><thead><tr><th>ID</th><th>Status</th><th>Subscription</th><th>Machines</th><th>Paid until</th><th>Code</th></tr></thead>
+    <tbody>${licRows || '<tr><td colspan="6" class="muted">No licenses yet.</td></tr>'}</tbody></table>
     ${
       archived
         ? ''
@@ -160,8 +181,19 @@ function fmtMoney(millimes) {
   return (Number(millimes || 0) / 1000).toFixed(3) + ' TND'
 }
 
-export function licenseDetailPage({ license, customer, machines, paidUntil, payments, transfers = [], error }) {
+export function licenseDetailPage({ license, customer, machines, paidUntil, billing, payments, transfers = [], error }) {
   const revoked = license.status === 'revoked'
+  // Prominent renewal notice when the subscription is in grace or expired.
+  const renewalNotice =
+    billing && ['grace', 'lapsed', 'unpaid'].includes(billing.state)
+      ? `<div class="notice ${billing.state === 'grace' ? 'warn' : 'bad'}">${
+          billing.state === 'unpaid'
+            ? 'No payment recorded yet — record one to start the subscription.'
+            : billing.state === 'grace'
+              ? 'Subscription lapsed but within the grace window — the customer should renew now.'
+              : 'Subscription expired — renewals are being refused until a payment is recorded.'
+        }</div>`
+      : ''
   const mRows = machines
     .map((m) => {
       const bound = !m.unbound_at
@@ -202,9 +234,10 @@ export function licenseDetailPage({ license, customer, machines, paidUntil, paym
   const body = `
     <p><a href="/admin/customers/${customer.id}">← ${esc(customer.name)}</a></p>
     ${error ? `<p class="err">${esc(error)}</p>` : ''}
-    <h2>License #${license.id} ${statusBadge(license.status)}</h2>
+    <h2>License #${license.id} ${statusBadge(license.status)} ${billingBadge(billing)}</h2>
     <p class="code">${esc(formatActivationCode(license.activation_code))}</p>
     <p class="muted">Seats: ${license.max_machines} · Paid until: ${fmtDate(paidUntil)} · Issued: ${fmtDate(license.created_at)}</p>
+    ${renewalNotice}
     <div class="card"><h2>Status</h2>${statusControls}</div>
     ${
       revoked
