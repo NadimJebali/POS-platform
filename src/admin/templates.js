@@ -60,25 +60,36 @@ export function loginPage({ error } = {}) {
   return layout('Sign in', body, { authed: false })
 }
 
-export function customersPage({ customers, search, error }) {
+export function customersPage({ customers, search, error, archived = false }) {
   const rows = customers
     .map(
       (c) => `<tr>
         <td><a href="/admin/customers/${c.id}">${esc(c.name)}</a></td>
         <td>${esc(c.phone) || '—'}</td><td>${esc(c.city) || '—'}</td>
-        <td class="muted">${fmtDate(c.created_at)}</td></tr>`
+        <td class="muted">${fmtDate(c.created_at)}</td>
+        ${archived ? `<td class="muted">${fmtDate(c.archived_at)}</td>` : ''}</tr>`
     )
     .join('')
+  const emptyCols = archived ? 5 : 4
+  const toggle = archived
+    ? `<a href="/admin">← Active customers</a>`
+    : `<a href="/admin?archived=1">View archived customers</a>`
+  const searchAction = archived ? '/admin?archived=1' : '/admin'
   const body = `
     ${error ? `<p class="err">${esc(error)}</p>` : ''}
-    <form class="inline" method="get" action="/admin">
+    <p>${toggle}</p>
+    <form class="inline" method="get" action="${searchAction}">
+      ${archived ? '<input type="hidden" name="archived" value="1">' : ''}
       <div><label for="q">Search</label><input id="q" name="q" value="${esc(search)}" placeholder="name, phone, city"></div>
       <button class="secondary">Search</button>
     </form>
-    <h2>Customers (${customers.length})</h2>
-    <table><thead><tr><th>Name</th><th>Phone</th><th>City</th><th>Added</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="4" class="muted">No customers yet.</td></tr>'}</tbody></table>
-    <div class="card"><h2>New customer</h2>
+    <h2>${archived ? 'Archived' : 'Active'} customers (${customers.length})</h2>
+    <table><thead><tr><th>Name</th><th>Phone</th><th>City</th><th>Added</th>${archived ? '<th>Archived</th>' : ''}</tr></thead>
+    <tbody>${rows || `<tr><td colspan="${emptyCols}" class="muted">No ${archived ? 'archived' : ''} customers.</td></tr>`}</tbody></table>
+    ${
+      archived
+        ? ''
+        : `<div class="card"><h2>New customer</h2>
       <form class="inline" method="post" action="/admin/customers">
         <div><label for="name">Name / café *</label><input id="name" name="name" required></div>
         <div><label for="phone">Phone</label><input id="phone" name="phone"></div>
@@ -86,10 +97,12 @@ export function customersPage({ customers, search, error }) {
         <button>Add customer</button>
       </form>
     </div>`
+    }`
   return layout('Customers', body)
 }
 
-export function customerPage({ customer, licenses, newCode }) {
+export function customerPage({ customer, licenses, newCode, error }) {
+  const archived = !!customer.archived_at
   const licRows = licenses
     .map(
       (l) => `<tr>
@@ -105,20 +118,41 @@ export function customerPage({ customer, licenses, newCode }) {
        <p class="code">${esc(formatActivationCode(newCode))}</p>
        <p class="muted">They type it into the app's Activate screen. It won't be shown this prominently again.</p></div>`
     : ''
+
+  // Lifecycle controls: archive a churned customer (reversible, keeps records), or —
+  // only once archived — delete permanently (irreversible, wipes their ledger).
+  const lifecycle = archived
+    ? `<div class="card"><h2>Archived</h2>
+        <p class="muted">Archived ${fmtDate(customer.archived_at)}. Records are retained.</p>
+        <form method="post" action="/admin/customers/${customer.id}/unarchive" style="display:inline"><button class="secondary">Unarchive</button></form>
+        <form method="post" action="/admin/customers/${customer.id}/delete" style="display:inline" onsubmit="return confirm('Permanently delete this customer AND all their licenses and payment history? This cannot be undone.')">
+          <input type="hidden" name="confirm" value="yes"><button class="secondary">Delete permanently</button></form>
+      </div>`
+    : `<div class="card"><h2>Lifecycle</h2>
+        <form method="post" action="/admin/customers/${customer.id}/archive" style="display:inline" onsubmit="return confirm('Archive this customer? They will be hidden from the active list but all records are kept.')"><button class="secondary">Archive customer</button></form>
+        <p class="muted">Archiving hides a churned customer while keeping their history. Permanent deletion is offered after archiving.</p>
+      </div>`
+
   const body = `
-    <p><a href="/admin">← Customers</a></p>
-    <h2>${esc(customer.name)}</h2>
+    <p><a href="/admin${archived ? '?archived=1' : ''}">← Customers</a></p>
+    ${error ? `<p class="err">${esc(error)}</p>` : ''}
+    <h2>${esc(customer.name)} ${archived ? '<span class="badge suspended">archived</span>' : ''}</h2>
     <p class="muted">${esc(customer.phone) || 'no phone'} · ${esc(customer.city) || 'no city'} · added ${fmtDate(customer.created_at)}</p>
     ${banner}
     <h2>Licenses (${licenses.length})</h2>
     <table><thead><tr><th>ID</th><th>Status</th><th>Machines</th><th>Paid until</th><th>Code</th></tr></thead>
     <tbody>${licRows || '<tr><td colspan="5" class="muted">No licenses yet.</td></tr>'}</tbody></table>
-    <div class="card"><h2>Issue a license</h2>
+    ${
+      archived
+        ? ''
+        : `<div class="card"><h2>Issue a license</h2>
       <form class="inline" method="post" action="/admin/customers/${customer.id}/licenses">
         <div><label for="max">Machines (seats)</label><input id="max" name="max_machines" type="number" min="1" value="1"></div>
         <button>Issue license</button>
       </form>
     </div>`
+    }
+    ${lifecycle}`
   return layout(customer.name, body)
 }
 

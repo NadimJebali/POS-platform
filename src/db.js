@@ -28,8 +28,18 @@ export function openDb(path = ':memory:') {
   db.exec('PRAGMA journal_mode = WAL;')
   db.exec('PRAGMA foreign_keys = ON;')
   db.exec(SCHEMA)
+  migrate(db)
   seedSettings(db)
   return db
+}
+
+// Additive migrations for databases created before a column existed (CREATE TABLE
+// IF NOT EXISTS won't add columns to an existing table). Each step is idempotent.
+function migrate(db) {
+  const columns = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name)
+  if (!columns('customers').includes('archived_at')) {
+    db.exec('ALTER TABLE customers ADD COLUMN archived_at INTEGER')
+  }
 }
 
 function seedSettings(db) {

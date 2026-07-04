@@ -7,7 +7,14 @@ import {
   destroySession
 } from '../auth.js'
 import { createLoginLimiter } from './login-limit.js'
-import { createCustomer, getCustomer, listCustomers } from '../customers.js'
+import {
+  createCustomer,
+  getCustomer,
+  listCustomers,
+  archiveCustomer,
+  unarchiveCustomer,
+  deleteCustomer
+} from '../customers.js'
 import {
   issueLicense,
   listLicensesForCustomer,
@@ -70,7 +77,11 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
 
     admin.get('/admin', async (request, reply) => {
       const search = request.query?.q ?? ''
-      return sendHtml(reply, customersPage({ customers: listCustomers(db, { search }), search }))
+      const archived = request.query?.archived === '1'
+      return sendHtml(
+        reply,
+        customersPage({ customers: listCustomers(db, { search, archived }), search, archived })
+      )
     })
 
     admin.post('/admin/customers', async (request, reply) => {
@@ -95,6 +106,53 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
       const licenses = listLicensesForCustomer(db, customer.id)
       const newCode = request.query?.code || null
       return sendHtml(reply, customerPage({ customer, licenses, newCode }))
+    })
+
+    // Show a customer detail page, optionally with an error.
+    const showCustomer = (reply, id, { error, status = 200 } = {}) => {
+      const customer = getCustomer(db, id)
+      if (!customer) return sendHtml(reply, loginPage({ error: 'No such customer' }), 404)
+      return sendHtml(
+        reply,
+        customerPage({ customer, licenses: listLicensesForCustomer(db, id), error }),
+        error ? status : 200
+      )
+    }
+
+    admin.post('/admin/customers/:id/archive', async (request, reply) => {
+      const id = Number(request.params.id)
+      try {
+        archiveCustomer(db, id)
+        return reply.redirect(`/admin/customers/${id}`)
+      } catch (err) {
+        if (err instanceof LicenseError) return showCustomer(reply, id, { error: err.message, status: err.status })
+        throw err
+      }
+    })
+
+    admin.post('/admin/customers/:id/unarchive', async (request, reply) => {
+      const id = Number(request.params.id)
+      try {
+        unarchiveCustomer(db, id)
+        return reply.redirect(`/admin/customers/${id}`)
+      } catch (err) {
+        if (err instanceof LicenseError) return showCustomer(reply, id, { error: err.message, status: err.status })
+        throw err
+      }
+    })
+
+    admin.post('/admin/customers/:id/delete', async (request, reply) => {
+      const id = Number(request.params.id)
+      if (request.body?.confirm !== 'yes') {
+        return showCustomer(reply, id, { error: 'Deletion must be confirmed', status: 400 })
+      }
+      try {
+        deleteCustomer(db, id)
+        return reply.redirect('/admin')
+      } catch (err) {
+        if (err instanceof LicenseError) return showCustomer(reply, id, { error: err.message, status: err.status })
+        throw err
+      }
     })
 
     admin.post('/admin/customers/:id/licenses', async (request, reply) => {

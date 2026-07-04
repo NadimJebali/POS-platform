@@ -9,11 +9,12 @@
 --    not off any table below, so no column here needs to change to add it.
 
 CREATE TABLE IF NOT EXISTS customers (
-  id         INTEGER PRIMARY KEY,
-  name       TEXT    NOT NULL,          -- café / owner name
-  phone      TEXT,
-  city       TEXT,
-  created_at INTEGER NOT NULL
+  id          INTEGER PRIMARY KEY,
+  name        TEXT    NOT NULL,          -- café / owner name
+  phone       TEXT,
+  city        TEXT,
+  created_at  INTEGER NOT NULL,
+  archived_at INTEGER                    -- soft-delete: hidden from the default list when set
 );
 
 CREATE TABLE IF NOT EXISTS licenses (
