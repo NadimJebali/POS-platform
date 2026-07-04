@@ -80,11 +80,17 @@ jobs:
 
           SSH="ssh -i deploy_key -o UserKnownHostsFile=known_hosts -o StrictHostKeyChecking=yes"
 
-          # Wait for first-boot provisioning to finish (cloud-init installs Docker and
-          # clones the repo), then ensure the repo is present — so the deploy doesn't
-          # depend on cloud-init timing and self-heals if the clone never happened.
+          # Wait for first-boot provisioning, then make sure Docker, git, and the repo
+          # are actually present — the deploy self-heals rather than depending on
+          # cloud-init having succeeded.
           $SSH root@"$HOST" 'set -euo pipefail
+            export DEBIAN_FRONTEND=noninteractive
             cloud-init status --wait >/dev/null 2>&1 || true
+            command -v git >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq git; }
+            if ! command -v docker >/dev/null 2>&1; then
+              curl -fsSL https://get.docker.com | sh
+              systemctl enable --now docker
+            fi
             if [ ! -d /root/pos-platform/.git ]; then
               rm -rf /root/pos-platform
               git clone https://github.com/NadimJebali/POS-platform.git /root/pos-platform

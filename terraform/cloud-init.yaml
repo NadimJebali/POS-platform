@@ -1,14 +1,15 @@
 #cloud-config
 # Bootstraps the droplet with everything needed to run the stack — but NO secrets.
-# After apply, SSH in, create .env (per DEPLOY.md step 4), and `docker compose up -d`.
+# Docker is installed via the official convenience script (reliable across releases;
+# the apt docker packages vary by Ubuntu version). The deploy workflow also self-heals
+# these if cloud-init hasn't finished, so timing/failures here aren't fatal.
 package_update: true
-package_upgrade: true
 packages:
-  - docker.io
-  - docker-compose-v2
+  - git
   - sqlite3
   - awscli
-  - git
+  - curl
 runcmd:
+  - [sh, -c, "curl -fsSL https://get.docker.com | sh"]
   - systemctl enable --now docker
   - [git, clone, "https://github.com/NadimJebali/POS-platform.git", /root/pos-platform]
