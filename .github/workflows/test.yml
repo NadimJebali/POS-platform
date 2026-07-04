@@ -1,0 +1,21 @@
+name: test
+
+# Runs the test suite on pushes to main and on every PR, so tests gate merges.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24' # node:sqlite is unflagged on 24
+      - run: npm ci
+      - run: npm test

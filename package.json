@@ -10,7 +10,8 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "predev": "node scripts/dev-setup.mjs",
+    "dev": "node --env-file=.env --watch src/server.js",
     "keygen": "node scripts/keygen.mjs",
     "hash-password": "node scripts/hash-password.mjs",
     "test": "node --test"
