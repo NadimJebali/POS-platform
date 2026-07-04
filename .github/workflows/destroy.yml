@@ -1,0 +1,42 @@
+name: destroy
+
+# Tears down ALL infrastructure (droplet, reserved IP, firewall, DNS record) via
+# `terraform destroy`. Manual only, and guarded: you must type "destroy" in the
+# confirm box or the job is skipped. Shares the "infra" concurrency group so it can
+# never run at the same time as infra.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm tearing down all infrastructure'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    # Only proceeds on an exact-match confirmation; otherwise the job is skipped.
+    if: ${{ inputs.confirm == 'destroy' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      TF_VAR_do_token: ${{ secrets.DO_API_TOKEN }}
+      TF_VAR_ssh_public_key: ${{ vars.SSH_PUBLIC_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - run: terraform init
+      - run: terraform destroy -input=false -auto-approve

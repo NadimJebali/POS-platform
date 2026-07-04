@@ -1,6 +1,7 @@
 // Loads runtime configuration from the environment. Kept tiny and dependency-free;
 // `.env` is loaded by `node --env-file` (see server.js) rather than a library.
 import crypto from 'node:crypto'
+import { hashPassword } from './auth.js'
 
 // Parses the Ed25519 private key from LICENSE_PRIVATE_KEY. Accepts either a real
 // multi-line PEM or the single-line \n-escaped form that lives in a .env value.
@@ -22,12 +23,18 @@ export function loadConfig(env = process.env) {
     port: Number(env.PORT) || 3000,
     dbPath: env.DB_PATH || './data/pos-platform.db',
     privateKey: loadPrivateKey(env),
-    // Admin login. The password is stored only as a scrypt hash (generate with
-    // `npm run hash-password`). Absent hash = admin disabled (login always fails),
-    // so a misconfigured deploy can't be logged into with an empty password.
-    adminPasswordHash: env.ADMIN_PASSWORD_HASH || '',
+    adminPasswordHash: resolveAdminHash(env),
     // Marks the session cookie Secure so it's only sent over HTTPS. Defaults on;
     // set COOKIE_INSECURE=1 for local plain-HTTP testing.
     cookieSecure: env.COOKIE_INSECURE !== '1'
   }
+}
+
+// Resolves the effective admin login hash. Two ways to configure it:
+//  - ADMIN_PASSWORD: a plaintext password, hashed here at startup (simplest).
+//  - ADMIN_PASSWORD_HASH: a pre-computed scrypt hash (avoids plaintext at rest).
+// ADMIN_PASSWORD wins when both are set. If neither is set, login is disabled.
+export function resolveAdminHash(env = process.env) {
+  if (env.ADMIN_PASSWORD) return hashPassword(env.ADMIN_PASSWORD)
+  return env.ADMIN_PASSWORD_HASH || ''
 }

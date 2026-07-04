@@ -3,7 +3,6 @@
 // NEVER overwrites an existing .env, so it can't clobber real secrets.
 import { existsSync, writeFileSync } from 'node:fs'
 import crypto from 'node:crypto'
-import { hashPassword } from '../src/auth.js'
 
 const envPath = new URL('../.env', import.meta.url)
 if (existsSync(envPath)) {
@@ -22,7 +21,7 @@ PORT=3000
 DB_PATH=./data/dev.db
 COOKIE_INSECURE=1
 LICENSE_PRIVATE_KEY="${privLine}"
-ADMIN_PASSWORD_HASH=${hashPassword(DEV_PASSWORD)}
+ADMIN_PASSWORD=${DEV_PASSWORD}
 `
 )
 
