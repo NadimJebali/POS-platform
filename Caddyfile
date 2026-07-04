@@ -1,7 +1,17 @@
 # Caddy fetches and renews a Let's Encrypt certificate for $DOMAIN automatically and
-# reverse-proxies to the Node service. The /updates/* static feed (issue #24 / #11)
-# will be added here later; for now it's just the API.
+# reverse-proxies to the Node service.
+#
+# /updates/* is the app's auto-update feed + installer downloads (POS-software #24):
+# static files served straight by Caddy from the bind-mounted ./updates directory —
+# no auth by design (electron-updater polls it anonymously), and it never touches the
+# API. The publish script (POS-software scripts/publish-update.mjs) uploads here.
 {$DOMAIN} {
 	encode zstd gzip
+
+	handle_path /updates/* {
+		root * /srv/updates
+		file_server
+	}
+
 	reverse_proxy api:3000
 }

@@ -9,6 +9,11 @@ node_modules/
 *.pem
 keys/
 
+# Update feed artifacts (installers uploaded by the app's publish script) — only the
+# directory itself is tracked so the bind mounts always have a target
+updates/*
+!updates/.gitkeep
+
 # Local database + backups
 data/
 *.db

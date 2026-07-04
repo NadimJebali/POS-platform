@@ -13,10 +13,14 @@ services:
     environment:
       - PORT=3000
       - DB_PATH=/data/pos-platform.db
+      - UPDATES_DIR=/updates
     # Bind-mount ./data so the SQLite file is directly reachable on the host for the
     # nightly backup (scripts/backup.sh). ./data is gitignored.
+    # ./updates (installers + releases.json, uploaded by the app's publish script) is
+    # mounted read-only so the public download page can read the release manifest.
     volumes:
       - ./data:/data
+      - ./updates:/updates:ro
     expose:
       - '3000'
 
@@ -30,6 +34,7 @@ services:
       - DOMAIN=${DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./updates:/srv/updates:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
