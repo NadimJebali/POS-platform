@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (gitignored) and fill in, OR pass via -var / TF_VAR_*.
+# The DO token is NOT here — export it as an env var so it never lands in a file:
+#   export TF_VAR_do_token=your_rotated_do_token
+
+ssh_public_key = "ssh-ed25519 AAAA... your-rotated-public-key"
+
+# Optional overrides (defaults shown):
+# domain    = "nadimjebali.engineer"
+# subdomain = "pos"
+# region    = "fra1"
+# size      = "s-1vcpu-1gb"

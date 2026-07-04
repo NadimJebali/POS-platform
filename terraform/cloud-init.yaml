@@ -1,0 +1,14 @@
+#cloud-config
+# Bootstraps the droplet with everything needed to run the stack — but NO secrets.
+# After apply, SSH in, create .env (per DEPLOY.md step 4), and `docker compose up -d`.
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - sqlite3
+  - awscli
+  - git
+runcmd:
+  - systemctl enable --now docker
+  - [git, clone, "https://github.com/NadimJebali/POS-platform.git", /root/pos-platform]
