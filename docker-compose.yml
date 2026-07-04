@@ -5,12 +5,14 @@ services:
   api:
     build: .
     restart: unless-stopped
+    env_file: .env
     environment:
       - PORT=3000
       - DB_PATH=/data/pos-platform.db
-      - LICENSE_PRIVATE_KEY=${LICENSE_PRIVATE_KEY}
+    # Bind-mount ./data so the SQLite file is directly reachable on the host for the
+    # nightly backup (scripts/backup.sh). ./data is gitignored.
     volumes:
-      - db-data:/data
+      - ./data:/data
     expose:
       - '3000'
 
@@ -30,6 +32,5 @@ services:
       - api
 
 volumes:
-  db-data:
   caddy-data:
   caddy-config:
