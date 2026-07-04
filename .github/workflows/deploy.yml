@@ -79,12 +79,23 @@ jobs:
           } > env.deploy
 
           SSH="ssh -i deploy_key -o UserKnownHostsFile=known_hosts -o StrictHostKeyChecking=yes"
+
+          # Wait for first-boot provisioning to finish (cloud-init installs Docker and
+          # clones the repo), then ensure the repo is present — so the deploy doesn't
+          # depend on cloud-init timing and self-heals if the clone never happened.
+          $SSH root@"$HOST" 'set -euo pipefail
+            cloud-init status --wait >/dev/null 2>&1 || true
+            if [ ! -d /root/pos-platform/.git ]; then
+              rm -rf /root/pos-platform
+              git clone https://github.com/NadimJebali/POS-platform.git /root/pos-platform
+            fi'
+
+          # Copy the env file up (the directory is guaranteed to exist now).
           scp -i deploy_key -o UserKnownHostsFile=known_hosts env.deploy \
             root@"$HOST":/root/pos-platform/.env
 
-          # On the droplet: refresh compose/Caddy config from git, pull the pinned
-          # (public) image, and restart. No docker login needed — the image is public,
-          # and it contains only code that's already public on GitHub.
+          # Refresh compose/Caddy config from git, pull the pinned (public) image,
+          # and restart. No docker login needed — the image is public.
           $SSH root@"$HOST" 'set -euo pipefail
             cd /root/pos-platform
             git pull --ff-only
