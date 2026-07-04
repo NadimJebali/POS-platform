@@ -24,7 +24,7 @@ import {
   LicenseError
 } from '../licenses.js'
 import { recordPayment } from '../payments.js'
-import { getAllSettings, setIntSetting } from '../db.js'
+import { getAllSettings, setIntSetting, setTextSetting } from '../db.js'
 import {
   loginPage,
   customersPage,
@@ -246,6 +246,12 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
       try {
         for (const key of ['renewal_window_days', 'grace_days', 'transfers_per_year', 'warn_days']) {
           if (request.body?.[key] != null) setIntSetting(db, key, request.body[key])
+        }
+        // Download-page content. The enabled flag is a checkbox: absent when
+        // unchecked, so it's normalized rather than skipped like the fields above.
+        setTextSetting(db, 'download_page_enabled', request.body?.download_page_enabled === '1' ? '1' : '0')
+        for (const key of ['product_name', 'product_tagline', 'product_description', 'contact_phone', 'contact_email']) {
+          if (request.body?.[key] != null) setTextSetting(db, key, request.body[key])
         }
         return reply.redirect('/admin/settings?saved=1')
       } catch (err) {

@@ -15,8 +15,26 @@ export const DEFAULT_SETTINGS = {
   renewal_window_days: '30',
   grace_days: '7',
   transfers_per_year: '2',
-  warn_days: '7'
+  warn_days: '7',
+  // Public download page (rendered at /). Off until the admin flips it on.
+  download_page_enabled: '0',
+  product_name: 'POS Software',
+  product_tagline: '',
+  product_description: '',
+  contact_phone: '',
+  contact_email: ''
 }
+
+// The settings above that hold free text (edited via setTextSetting; everything the
+// admin can break is length-capped there). The rest are non-negative integers.
+export const TEXT_SETTINGS = [
+  'download_page_enabled',
+  'product_name',
+  'product_tagline',
+  'product_description',
+  'contact_phone',
+  'contact_email'
+]
 
 // Opens (or creates) the database, applies the schema, and seeds any missing
 // settings. `:memory:` gives a throwaway DB for tests.
@@ -64,6 +82,14 @@ export function setIntSetting(db, key, value) {
   const n = Number(value)
   if (!Number.isInteger(n) || n < 0) throw new Error(`${key} must be a non-negative integer`)
   db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(String(n), key)
+}
+
+// Writes a free-text setting. Only known text keys are writable, and values are
+// length-capped so a paste accident can't balloon the page.
+export function setTextSetting(db, key, value) {
+  if (!TEXT_SETTINGS.includes(key)) throw new Error(`Unknown setting: ${key}`)
+  const s = String(value ?? '').slice(0, 2000)
+  db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(s, key)
 }
 
 export function getAllSettings(db) {

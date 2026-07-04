@@ -286,6 +286,8 @@ export function licenseDetailPage({ license, customer, machines, paidUntil, bill
 export function settingsPage({ settings, saved, error }) {
   const field = (key, label, hint) =>
     `<div><label for="${key}">${esc(label)}</label><input id="${key}" name="${key}" type="number" min="0" value="${esc(settings[key])}"><span class="muted">${esc(hint)}</span></div>`
+  const text = (key, label, hint) =>
+    `<div><label for="${key}">${esc(label)}</label><input id="${key}" name="${key}" value="${esc(settings[key] ?? '')}"><span class="muted">${esc(hint)}</span></div>`
   const body = `
     <p><a href="/admin">← Customers</a></p>
     <h2>Global settings</h2>
@@ -297,6 +299,15 @@ export function settingsPage({ settings, saved, error }) {
       ${field('grace_days', 'Paid-grace (days)', 'renewals still succeed this long past paid-until, with a banner')}
       ${field('transfers_per_year', 'Machine transfers per year', 'self-service rebind limit')}
       ${field('warn_days', 'Warn (days before expiry)', 'when the app shows the connectivity warning')}
+
+      <h2>Download page</h2>
+      <p class="muted">The public page at the site root where customers download the installer. Versions come from the publish script's manifest, not from here.</p>
+      <div><label><input type="checkbox" name="download_page_enabled" value="1" ${settings.download_page_enabled === '1' ? 'checked' : ''} style="width:auto"> Page enabled (visible to everyone)</label></div>
+      ${text('product_name', 'Product name', 'shown as the wordmark and page title')}
+      ${text('product_tagline', 'Tagline', 'the big headline, one sentence')}
+      ${text('product_description', 'Description', 'a short paragraph under the headline')}
+      ${text('contact_phone', 'Contact phone', 'shown in the footer, tappable')}
+      ${text('contact_email', 'Contact email', 'shown in the header and footer')}
       <div><button>Save settings</button></div>
     </form>`
   return layout('Settings', body)

@@ -8,6 +8,9 @@ import formbody from '@fastify/formbody'
 import rateLimit from '@fastify/rate-limit'
 import { activate, renew, rebind, LicenseError } from './licenses.js'
 import { registerAdmin } from './admin/index.js'
+import { readReleases } from './releases.js'
+import { downloadPage } from './download-page.js'
+import { getAllSettings } from './db.js'
 
 // Per-IP limits on the public write endpoints. activate/rebind are the guessable
 // ones (someone probing activation codes), so they're tighter; renew is called
@@ -24,6 +27,7 @@ export function buildApp({
   adminPasswordHash = '',
   cookieSecure = true,
   rateLimits = DEFAULT_RATE_LIMITS,
+  updatesDir = process.env.UPDATES_DIR || './updates',
   logger = false
 }) {
   // trustProxy so request.ip reflects Caddy's X-Forwarded-For (per-IP rate limiting).
@@ -51,6 +55,17 @@ export function buildApp({
 
   // Liveness probe (used by Docker/Caddy health checks and uptime pings).
   app.get('/health', async () => ({ ok: true }))
+
+  // Public download page. Off (404) until the admin enables it in settings; content
+  // comes from the settings table + the releases.json manifest in the updates dir
+  // (the app's publish script maintains both the installers and the manifest there).
+  app.get('/', async (request, reply) => {
+    const settings = getAllSettings(db)
+    if (settings.download_page_enabled !== '1') {
+      return reply.status(404).type('text/html').send('<!doctype html><title>Not found</title><p>Nothing here yet.</p>')
+    }
+    return reply.type('text/html').send(downloadPage({ settings, releases: readReleases(updatesDir) }))
+  })
 
   // The public write endpoints live in a child plugin that registers rate limiting
   // (per-IP, opt-in) BEFORE defining its routes, so the plugin's onRoute hook sees
