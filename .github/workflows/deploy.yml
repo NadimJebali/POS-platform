@@ -60,7 +60,14 @@ jobs:
 
           printf '%s\n' "$SSH_KEY" > deploy_key
           chmod 600 deploy_key
-          ssh-keyscan -H "$HOST" >> known_hosts 2>/dev/null
+
+          # Preflight: the droplet must exist and be reachable over SSH. If it isn't,
+          # fail with an actionable message instead of a silent errexit from ssh-keyscan.
+          ssh-keyscan -T 10 -H "$HOST" > known_hosts 2>/dev/null || true
+          if [ ! -s known_hosts ]; then
+            echo "::error::Can't reach $HOST over SSH. Provision the server first: run the 'infra' workflow (terraform apply) to create the droplet, reserved IP, and the pos DNS record, then wait ~2 min for cloud-init. See DEPLOY.md."
+            exit 1
+          fi
 
           # Build the droplet .env locally (IMAGE pins this exact build), copy it up.
           # GitHub masks these secret values in logs.
