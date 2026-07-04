@@ -30,18 +30,14 @@ data "digitalocean_domain" "root" {
   name = var.domain
 }
 
-# SSH key used to reach the droplet. Uses the (rotated) public key.
-resource "digitalocean_ssh_key" "deploy" {
-  name       = "pos-platform-deploy"
-  public_key = var.ssh_public_key
-}
-
 resource "digitalocean_droplet" "pos" {
-  name      = "pos-platform"
-  image     = "ubuntu-24-04-x64"
-  region    = var.region
-  size      = var.size
-  ssh_keys  = [digitalocean_ssh_key.deploy.fingerprint]
+  name   = "pos-platform"
+  image  = "ubuntu-24-04-x64"
+  region = var.region
+  size   = var.size
+  # Reference the SSH key already in the DO account by fingerprint, so Terraform
+  # doesn't try to re-upload it (which fails with "SSH Key is already in use").
+  ssh_keys  = [var.ssh_key_fingerprint]
   user_data = file("${path.module}/cloud-init.yaml")
 
   # Recreating the droplet keeps the reserved IP (below), so DNS never changes.

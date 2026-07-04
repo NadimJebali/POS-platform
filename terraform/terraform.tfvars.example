@@ -2,7 +2,7 @@
 # The DO token is NOT here — export it as an env var so it never lands in a file:
 #   export TF_VAR_do_token=your_rotated_do_token
 
-ssh_public_key = "ssh-ed25519 AAAA... your-rotated-public-key"
+ssh_key_fingerprint = "44:44:bb:c2:..."   # DO Settings > Security > SSH Keys
 
 # Optional overrides (defaults shown):
 # domain    = "nadimjebali.engineer"

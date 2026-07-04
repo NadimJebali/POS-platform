@@ -29,7 +29,7 @@ jobs:
     env:
       # Provider + variables
       TF_VAR_do_token: ${{ secrets.DO_API_TOKEN }}
-      TF_VAR_ssh_public_key: ${{ vars.SSH_PUBLIC_KEY }}
+      TF_VAR_ssh_key_fingerprint: ${{ vars.SSH_FINGERPRINT }}
       # Credentials for the S3-compatible state backend (DO Spaces)
       AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}

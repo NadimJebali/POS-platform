@@ -19,8 +19,9 @@ export TF_VAR_do_token=<rotated DO API token>
 export AWS_ACCESS_KEY_ID=<spaces access key>       # for the state backend
 export AWS_SECRET_ACCESS_KEY=<spaces secret key>
 
-# ssh_public_key: pass your rotated public key (or put it in terraform.tfvars)
-export TF_VAR_ssh_public_key="ssh-ed25519 AAAA... "
+# ssh_key_fingerprint: the fingerprint of the SSH key already in your DO account
+# (DO Settings > Security > SSH Keys), so Terraform references it instead of re-uploading.
+export TF_VAR_ssh_key_fingerprint="44:44:bb:c2:..."
 
 terraform init
 terraform plan

@@ -28,7 +28,7 @@ variable "size" {
   default     = "s-1vcpu-1gb"
 }
 
-variable "ssh_public_key" {
-  description = "Public SSH key (the rotated one) authorized to reach the droplet."
+variable "ssh_key_fingerprint" {
+  description = "Fingerprint of the SSH key already uploaded to the DO account (e.g. 44:44:...)."
   type        = string
 }
