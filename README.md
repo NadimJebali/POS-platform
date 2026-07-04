@@ -8,8 +8,9 @@ to this server to **activate** and to **renew** its short-lived, machine-bound l
 
 ## Status
 
-Activation (#6), renewal (#7), and the admin panel with billing (#8, #9) are in.
-Self-service rebind (#10) and the update feed follow in later slices.
+The full license server is in: activation (#6), renewal (#7), admin with billing
+(#8, #9), and self-service rebind (#10). What remains is deployment/hardening on the
+droplet (#11) and the app-side and update-feed work in the POS-software repo.
 
 ## Admin panel
 
@@ -85,6 +86,19 @@ Errors: `invalid_key` (401, bad/forged signature or unknown license), `machine_m
 (403), `unbound` (403, machine rebound away), `suspended` / `revoked` (403), `lapsed`
 (403, past the grace window). `paid_until` is derived from the append-only payments
 ledger, never stored.
+
+### `POST /rebind`
+
+Move a license onto a new machine (the "my PC died" flow — the app calls this after
+an activation reports `machine_limit`). Frees the oldest seat, binds the new machine,
+and counts against the yearly transfer limit; the old machine can no longer renew.
+
+Request: `{ "code": "POSK-…", "machineId": "NEW-MACHINE", "appVersion": "0.2.0" }`
+
+Success `200`: same shape as activate. Errors: `invalid_code` (404), `suspended` /
+`revoked` (403), `transfer_limit` (429 — the app shows "contact the vendor"). Rebinding
+onto an already-bound machine, or when a seat is free, succeeds without spending a
+transfer.
 
 ## License format
 

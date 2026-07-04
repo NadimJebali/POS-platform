@@ -126,7 +126,7 @@ function fmtMoney(millimes) {
   return (Number(millimes || 0) / 1000).toFixed(3) + ' TND'
 }
 
-export function licenseDetailPage({ license, customer, machines, paidUntil, payments, error }) {
+export function licenseDetailPage({ license, customer, machines, paidUntil, payments, transfers = [], error }) {
   const revoked = license.status === 'revoked'
   const mRows = machines
     .map((m) => {
@@ -188,7 +188,13 @@ export function licenseDetailPage({ license, customer, machines, paidUntil, paym
     <tbody>${pRows || '<tr><td colspan="5" class="muted">No payments recorded.</td></tr>'}</tbody></table>
     <h2>Machines</h2>
     <table><thead><tr><th>Machine ID</th><th>State</th><th>App version</th><th>Last seen (UTC)</th><th></th></tr></thead>
-    <tbody>${mRows || '<tr><td colspan="5" class="muted">Never activated.</td></tr>'}</tbody></table>`
+    <tbody>${mRows || '<tr><td colspan="5" class="muted">Never activated.</td></tr>'}</tbody></table>
+    <h2>Transfers (${transfers.length})</h2>
+    <table><thead><tr><th>Date</th><th>From</th><th>To</th></tr></thead>
+    <tbody>${
+      transfers.map((t) => `<tr><td class="muted">${fmtDate(t.created_at)}</td><td class="muted">${esc(t.from_machine_id) || '—'}</td><td class="muted">${esc(t.to_machine_id)}</td></tr>`).join('') ||
+      '<tr><td colspan="3" class="muted">No transfers.</td></tr>'
+    }</tbody></table>`
   return layout(`License #${license.id}`, body)
 }
 

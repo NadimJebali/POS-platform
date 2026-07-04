@@ -67,3 +67,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL
 );
+
+-- Machine transfers (self-service rebind). One row per completed move, used both to
+-- enforce the rolling-year transfer limit and to show history in the admin.
+CREATE TABLE IF NOT EXISTS transfers (
+  id              INTEGER PRIMARY KEY,
+  license_id      INTEGER NOT NULL REFERENCES licenses(id),
+  from_machine_id TEXT,
+  to_machine_id   TEXT NOT NULL,
+  created_at      INTEGER NOT NULL
+);

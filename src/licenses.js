@@ -83,6 +83,93 @@ export function unbindMachine(db, licenseId, machineId, now = Date.now()) {
   if (info.changes === 0) throw new LicenseError('bad_request', 'No such active binding', 404)
 }
 
+const YEAR_MS = 365 * 86400000
+
+export function countTransfersSince(db, licenseId, sinceMs) {
+  return db
+    .prepare('SELECT COUNT(*) AS n FROM transfers WHERE license_id = ? AND created_at >= ?')
+    .get(licenseId, sinceMs).n
+}
+
+export function listTransfers(db, licenseId) {
+  return db
+    .prepare('SELECT * FROM transfers WHERE license_id = ? ORDER BY created_at DESC, id DESC')
+    .all(licenseId)
+}
+
+// Self-service rebind: move the license onto `machineId`. Called by the app when a
+// plain activation reported machine_limit and the user chose "move it here".
+//
+//  - unknown code               -> LicenseError('invalid_code', 404)
+//  - suspended / revoked         -> LicenseError('suspended' | 'revoked', 403)
+//  - over the yearly limit        -> LicenseError('transfer_limit', 429)  (app: contact vendor)
+//
+// If the machine is already bound, or a seat is free, this behaves like activation
+// (no transfer recorded). Only when all seats are full does it unbind the oldest and
+// record a transfer against the rolling-year limit. Returns a fresh signed key.
+export function rebind(db, { code, machineId, appVersion }, deps) {
+  const now = deps.now ?? Date.now()
+  if (!machineId || typeof machineId !== 'string') {
+    throw new LicenseError('bad_request', 'A machine id is required', 400)
+  }
+  const canonical = normalizeActivationCode(code)
+  if (!canonical) throw new LicenseError('invalid_code', 'That activation code is not valid', 404)
+  const license = db.prepare('SELECT * FROM licenses WHERE activation_code = ?').get(canonical)
+  if (!license) throw new LicenseError('invalid_code', 'That activation code is not valid', 404)
+  if (license.status === 'suspended') {
+    throw new LicenseError('suspended', 'This license is suspended — please contact the vendor', 403)
+  }
+  if (license.status === 'revoked') throw new LicenseError('revoked', 'This license has been revoked', 403)
+
+  const existing = db
+    .prepare('SELECT * FROM machines WHERE license_id = ? AND machine_id = ?')
+    .get(license.id, machineId)
+
+  if (existing && existing.unbound_at == null) {
+    // Already here — idempotent, just refresh telemetry and re-issue.
+    db.prepare('UPDATE machines SET last_seen_at = ?, app_version = ? WHERE id = ?').run(now, appVersion ?? existing.app_version, existing.id)
+  } else if (countActiveMachines(db, license.id) < license.max_machines) {
+    // A seat is free — this is really an activation, no transfer needed.
+    bindMachine(db, license, existing, machineId, appVersion, now)
+  } else {
+    // All seats full: this is a genuine transfer, subject to the yearly limit.
+    const limit = getIntSetting(db, 'transfers_per_year')
+    if (countTransfersSince(db, license.id, now - YEAR_MS) >= limit) {
+      throw new LicenseError('transfer_limit', 'This license has reached its transfer limit for the year — please contact the vendor', 429)
+    }
+    const oldest = db
+      .prepare('SELECT * FROM machines WHERE license_id = ? AND unbound_at IS NULL ORDER BY bound_at ASC, id ASC LIMIT 1')
+      .get(license.id)
+    db.prepare('UPDATE machines SET unbound_at = ? WHERE id = ?').run(now, oldest.id)
+    bindMachine(db, license, existing, machineId, appVersion, now)
+    db.prepare('INSERT INTO transfers (license_id, from_machine_id, to_machine_id, created_at) VALUES (?, ?, ?, ?)').run(
+      license.id,
+      oldest.machine_id,
+      machineId,
+      now
+    )
+  }
+
+  const payload = buildPayload({
+    lid: license.id,
+    machineId,
+    name: license.name,
+    now,
+    renewalWindowDays: getIntSetting(db, 'renewal_window_days'),
+    warnDays: getIntSetting(db, 'warn_days')
+  })
+  return { license_key: signLicense(payload, deps.privateKey), exp: payload.exp }
+}
+
+// Binds `machineId` to a license, reusing a prior unbound row if one exists.
+function bindMachine(db, license, existingRow, machineId, appVersion, now) {
+  if (existingRow) {
+    db.prepare('UPDATE machines SET unbound_at = NULL, bound_at = ?, last_seen_at = ?, app_version = ? WHERE id = ?').run(now, now, appVersion ?? null, existingRow.id)
+  } else {
+    db.prepare('INSERT INTO machines (license_id, machine_id, app_version, bound_at, last_seen_at) VALUES (?, ?, ?, ?, ?)').run(license.id, machineId, appVersion ?? null, now, now)
+  }
+}
+
 // Licenses for a customer, each annotated with its derived paid_until and current
 // bound-machine count — enough for the customer detail page.
 export function listLicensesForCustomer(db, customerId) {
@@ -112,7 +199,8 @@ export function getLicenseDetail(db, id) {
     customer,
     machines,
     paidUntil: derivePaidUntil(db, id),
-    payments: listPayments(db, id)
+    payments: listPayments(db, id),
+    transfers: listTransfers(db, id)
   }
 }
 

@@ -5,7 +5,7 @@ import Fastify from 'fastify'
 import crypto from 'node:crypto'
 import cookie from '@fastify/cookie'
 import formbody from '@fastify/formbody'
-import { activate, renew, LicenseError } from './licenses.js'
+import { activate, renew, rebind, LicenseError } from './licenses.js'
 import { registerAdmin } from './admin/index.js'
 
 export function buildApp({ db, privateKey, adminPasswordHash = '', cookieSecure = true, logger = false }) {
@@ -51,6 +51,13 @@ export function buildApp({ db, privateKey, adminPasswordHash = '', cookieSecure 
     return handle(request, reply, () =>
       renew(db, { license_key, machineId, appVersion }, { privateKey, publicKey })
     )
+  })
+
+  // POST /rebind — self-service machine transfer: move a license onto a new machine.
+  // Body: { code, machineId, appVersion? }
+  app.post('/rebind', async (request, reply) => {
+    const { code, machineId, appVersion } = request.body ?? {}
+    return handle(request, reply, () => rebind(db, { code, machineId, appVersion }, { privateKey }))
   })
 
   // Admin panel (server-rendered HTML) under /admin.
