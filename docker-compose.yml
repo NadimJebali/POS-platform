@@ -1,0 +1,35 @@
+# Deployment stack for the DigitalOcean droplet: the Node license server behind Caddy
+# (which handles automatic TLS for $DOMAIN). SQLite lives on a named volume so data
+# survives container rebuilds. `docker compose up -d` after populating .env.
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - DB_PATH=/data/pos-platform.db
+      - LICENSE_PRIVATE_KEY=${LICENSE_PRIVATE_KEY}
+    volumes:
+      - db-data:/data
+    expose:
+      - '3000'
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
