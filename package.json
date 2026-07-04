@@ -12,9 +12,12 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "keygen": "node scripts/keygen.mjs",
+    "hash-password": "node scripts/hash-password.mjs",
     "test": "node --test"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/formbody": "^8.0.2",
     "fastify": "^5.2.0"
   }
 }

@@ -1,7 +1,7 @@
 // License domain logic. Kept free of HTTP concerns so it's unit-testable and reused
 // by the admin (issue #8/#9) and renew/rebind endpoints (issue #7/#10) later.
 import { getIntSetting } from './db.js'
-import { normalizeActivationCode } from './activation-code.js'
+import { generateActivationCode, normalizeActivationCode } from './activation-code.js'
 import { signLicense, verifyLicense, buildPayload } from './license-format.js'
 import { derivePaidUntil } from './payments.js'
 
@@ -21,6 +21,67 @@ function countActiveMachines(db, licenseId) {
     .prepare('SELECT COUNT(*) AS n FROM machines WHERE license_id = ? AND unbound_at IS NULL')
     .get(licenseId)
   return row.n
+}
+
+// Issues a new license for a customer with a fresh unique activation code. Retries
+// on the astronomically unlikely code collision rather than trusting first draw.
+export function issueLicense(db, { customerId, maxMachines = 1, name }, now = Date.now()) {
+  if (!getCustomerExists(db, customerId)) {
+    throw new LicenseError('bad_request', 'Unknown customer', 400)
+  }
+  const seats = Number(maxMachines)
+  if (!Number.isInteger(seats) || seats < 1) {
+    throw new LicenseError('bad_request', 'Machine count must be a whole number ≥ 1', 400)
+  }
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateActivationCode()
+    try {
+      const info = db
+        .prepare(
+          'INSERT INTO licenses (customer_id, activation_code, status, max_machines, name, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+        )
+        .run(customerId, code, 'active', seats, name ?? null, now)
+      return { id: Number(info.lastInsertRowid), code }
+    } catch (err) {
+      if (!String(err.message).includes('UNIQUE')) throw err
+    }
+  }
+  throw new LicenseError('internal', 'Could not allocate an activation code', 500)
+}
+
+function getCustomerExists(db, id) {
+  return !!db.prepare('SELECT 1 FROM customers WHERE id = ?').get(id)
+}
+
+export function getLicense(db, id) {
+  return db.prepare('SELECT * FROM licenses WHERE id = ?').get(id) ?? null
+}
+
+// Licenses for a customer, each annotated with its derived paid_until and current
+// bound-machine count — enough for the customer detail page.
+export function listLicensesForCustomer(db, customerId) {
+  const rows = db
+    .prepare('SELECT * FROM licenses WHERE customer_id = ? ORDER BY created_at DESC')
+    .all(customerId)
+  return rows.map((lic) => ({
+    ...lic,
+    paidUntil: derivePaidUntil(db, lic.id),
+    activeMachines: countActiveMachines(db, lic.id)
+  }))
+}
+
+// Full detail for one license: the license, its customer, derived paid_until, and its
+// machines (active bindings first, then unbound history) with last-seen/version.
+export function getLicenseDetail(db, id) {
+  const license = getLicense(db, id)
+  if (!license) return null
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(license.customer_id)
+  const machines = db
+    .prepare(
+      'SELECT * FROM machines WHERE license_id = ? ORDER BY (unbound_at IS NOT NULL), last_seen_at DESC'
+    )
+    .all(id)
+  return { license, customer, machines, paidUntil: derivePaidUntil(db, id) }
 }
 
 // Activates a license onto a machine and returns a freshly signed license string.

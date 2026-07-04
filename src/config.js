@@ -21,6 +21,13 @@ export function loadConfig(env = process.env) {
   return {
     port: Number(env.PORT) || 3000,
     dbPath: env.DB_PATH || './data/pos-platform.db',
-    privateKey: loadPrivateKey(env)
+    privateKey: loadPrivateKey(env),
+    // Admin login. The password is stored only as a scrypt hash (generate with
+    // `npm run hash-password`). Absent hash = admin disabled (login always fails),
+    // so a misconfigured deploy can't be logged into with an empty password.
+    adminPasswordHash: env.ADMIN_PASSWORD_HASH || '',
+    // Marks the session cookie Secure so it's only sent over HTTPS. Defaults on;
+    // set COOKIE_INSECURE=1 for local plain-HTTP testing.
+    cookieSecure: env.COOKIE_INSECURE !== '1'
   }
 }

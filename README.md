@@ -8,8 +8,16 @@ to this server to **activate** and to **renew** its short-lived, machine-bound l
 
 ## Status
 
-Activation (#6) and renewal (#7) are in. Admin, rebind, and the update feed follow
-in later slices.
+Activation (#6), renewal (#7), and the minimal admin panel (#8) are in. Payments/
+suspend-revoke/settings (#9), rebind (#10), and the update feed follow in later slices.
+
+## Admin panel
+
+Server-rendered HTML under `/admin`, single account. Set `ADMIN_PASSWORD_HASH`
+(`npm run hash-password -- 'your password'`) and log in at `/admin/login`. Create
+customers, issue licenses (which shows the activation code to hand over), and view a
+license's bound machines with their last-seen time and app version. The session is an
+httpOnly cookie; login is rate limited.
 
 ## Requirements
 

@@ -7,7 +7,13 @@ import { buildApp } from './app.js'
 
 const config = loadConfig()
 const db = openDb(config.dbPath)
-const app = buildApp({ db, privateKey: config.privateKey, logger: true })
+const app = buildApp({
+  db,
+  privateKey: config.privateKey,
+  adminPasswordHash: config.adminPasswordHash,
+  cookieSecure: config.cookieSecure,
+  logger: true
+})
 
 app
   .listen({ port: config.port, host: '0.0.0.0' })

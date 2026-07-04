@@ -3,10 +3,17 @@
 // with `app.inject()` — no network, no real files. server.js wires the real ones.
 import Fastify from 'fastify'
 import crypto from 'node:crypto'
+import cookie from '@fastify/cookie'
+import formbody from '@fastify/formbody'
 import { activate, renew, LicenseError } from './licenses.js'
+import { registerAdmin } from './admin/index.js'
 
-export function buildApp({ db, privateKey, logger = false }) {
-  const app = Fastify({ logger })
+export function buildApp({ db, privateKey, adminPasswordHash = '', cookieSecure = true, logger = false }) {
+  // trustProxy so request.ip reflects Caddy's X-Forwarded-For (per-IP rate limiting).
+  const app = Fastify({ logger, trustProxy: true })
+
+  app.register(cookie)
+  app.register(formbody) // parse HTML form posts (application/x-www-form-urlencoded)
 
   // The server verifies clients' current keys against its OWN public key, derived
   // once from the signing key — this is what makes /renew self-authenticating.
@@ -45,6 +52,9 @@ export function buildApp({ db, privateKey, logger = false }) {
       renew(db, { license_key, machineId, appVersion }, { privateKey, publicKey })
     )
   })
+
+  // Admin panel (server-rendered HTML) under /admin.
+  registerAdmin(app, { db, adminPasswordHash, cookieSecure })
 
   return app
 }
