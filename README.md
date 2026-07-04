@@ -8,16 +8,23 @@ to this server to **activate** and to **renew** its short-lived, machine-bound l
 
 ## Status
 
-Activation (#6), renewal (#7), and the minimal admin panel (#8) are in. Payments/
-suspend-revoke/settings (#9), rebind (#10), and the update feed follow in later slices.
+Activation (#6), renewal (#7), and the admin panel with billing (#8, #9) are in.
+Self-service rebind (#10) and the update feed follow in later slices.
 
 ## Admin panel
 
 Server-rendered HTML under `/admin`, single account. Set `ADMIN_PASSWORD_HASH`
-(`npm run hash-password -- 'your password'`) and log in at `/admin/login`. Create
-customers, issue licenses (which shows the activation code to hand over), and view a
-license's bound machines with their last-seen time and app version. The session is an
-httpOnly cookie; login is rate limited.
+(`npm run hash-password -- 'your password'`) and log in at `/admin/login`. From there:
+
+- Create customers (minimal PII) and search them.
+- Issue licenses (the activation code is shown once, to hand over).
+- On a license: record payments (month/year, appended to a ledger from which
+  `paid_until` is derived), suspend/unsuspend, revoke (confirmed, permanent), and
+  manually unbind a machine to free a seat.
+- Edit global settings (renewal window, grace days, transfer limit, warn days) — they
+  take effect on each client's next renewal, no app update needed.
+
+The session is an httpOnly cookie; login is rate limited.
 
 ## Requirements
 

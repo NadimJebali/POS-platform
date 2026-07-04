@@ -46,3 +46,17 @@ export function getIntSetting(db, key) {
   if (!row) throw new Error(`Missing setting: ${key}`)
   return Number(row.value)
 }
+
+// Writes a non-negative integer setting. Only known keys are writable so the admin
+// form can't inject arbitrary settings rows.
+export function setIntSetting(db, key, value) {
+  if (!(key in DEFAULT_SETTINGS)) throw new Error(`Unknown setting: ${key}`)
+  const n = Number(value)
+  if (!Number.isInteger(n) || n < 0) throw new Error(`${key} must be a non-negative integer`)
+  db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(String(n), key)
+}
+
+export function getAllSettings(db) {
+  const rows = db.prepare('SELECT key, value FROM settings').all()
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]))
+}

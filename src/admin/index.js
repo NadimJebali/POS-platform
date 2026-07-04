@@ -12,13 +12,18 @@ import {
   issueLicense,
   listLicensesForCustomer,
   getLicenseDetail,
+  setLicenseStatus,
+  unbindMachine,
   LicenseError
 } from '../licenses.js'
+import { recordPayment } from '../payments.js'
+import { getAllSettings, setIntSetting } from '../db.js'
 import {
   loginPage,
   customersPage,
   customerPage,
-  licenseDetailPage
+  licenseDetailPage,
+  settingsPage
 } from './templates.js'
 
 export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
@@ -119,6 +124,70 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
       const detail = getLicenseDetail(db, Number(request.params.id))
       if (!detail) return sendHtml(reply, loginPage({ error: 'No such license' }), 404)
       return sendHtml(reply, licenseDetailPage(detail))
+    })
+
+    // Re-render a license detail page, optionally with an error, at a given status.
+    const showLicense = (reply, id, { error, status = 200 } = {}) => {
+      const detail = getLicenseDetail(db, id)
+      if (!detail) return sendHtml(reply, loginPage({ error: 'No such license' }), 404)
+      return sendHtml(reply, licenseDetailPage({ ...detail, error }), error ? status : 200)
+    }
+
+    admin.post('/admin/licenses/:id/payments', async (request, reply) => {
+      const id = Number(request.params.id)
+      try {
+        const months = Number(request.body?.months) === 12 ? 12 : 1
+        // The form takes TND; store millimes (integers) to match the app's money model.
+        const amountMillimes = Math.round((Number(request.body?.amount) || 0) * 1000)
+        recordPayment(db, { licenseId: id, months, amountMillimes, method: request.body?.method })
+        return reply.redirect(`/admin/licenses/${id}`)
+      } catch (err) {
+        return showLicense(reply, id, { error: err.message, status: 400 })
+      }
+    })
+
+    admin.post('/admin/licenses/:id/status', async (request, reply) => {
+      const id = Number(request.params.id)
+      const status = request.body?.status
+      // Revocation is irreversible, so it requires the explicit confirm field the
+      // revoke form sends (the button also asks in the browser).
+      if (status === 'revoked' && request.body?.confirm !== 'yes') {
+        return showLicense(reply, id, { error: 'Revocation must be confirmed', status: 400 })
+      }
+      try {
+        setLicenseStatus(db, id, status)
+        return reply.redirect(`/admin/licenses/${id}`)
+      } catch (err) {
+        if (err instanceof LicenseError) return showLicense(reply, id, { error: err.message, status: err.status })
+        throw err
+      }
+    })
+
+    admin.post('/admin/licenses/:id/machines/:machineId/unbind', async (request, reply) => {
+      const id = Number(request.params.id)
+      try {
+        unbindMachine(db, id, request.params.machineId)
+        return reply.redirect(`/admin/licenses/${id}`)
+      } catch (err) {
+        if (err instanceof LicenseError) return showLicense(reply, id, { error: err.message, status: err.status })
+        throw err
+      }
+    })
+
+    admin.get('/admin/settings', async (request, reply) => {
+      const saved = request.query?.saved === '1'
+      return sendHtml(reply, settingsPage({ settings: getAllSettings(db), saved }))
+    })
+
+    admin.post('/admin/settings', async (request, reply) => {
+      try {
+        for (const key of ['renewal_window_days', 'grace_days', 'transfers_per_year', 'warn_days']) {
+          if (request.body?.[key] != null) setIntSetting(db, key, request.body[key])
+        }
+        return reply.redirect('/admin/settings?saved=1')
+      } catch (err) {
+        return sendHtml(reply, settingsPage({ settings: getAllSettings(db), error: err.message }), 400)
+      }
     })
   })
 }

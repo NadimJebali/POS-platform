@@ -3,7 +3,7 @@
 import { getIntSetting } from './db.js'
 import { generateActivationCode, normalizeActivationCode } from './activation-code.js'
 import { signLicense, verifyLicense, buildPayload } from './license-format.js'
-import { derivePaidUntil } from './payments.js'
+import { derivePaidUntil, listPayments } from './payments.js'
 
 // A domain error carrying a stable machine-readable `code` so the HTTP layer can map
 // each failure to a distinct response and the app can branch on it (e.g. bound
@@ -57,6 +57,32 @@ export function getLicense(db, id) {
   return db.prepare('SELECT * FROM licenses WHERE id = ?').get(id) ?? null
 }
 
+const LICENSE_STATUSES = ['active', 'suspended', 'revoked']
+
+// Sets a license's status. suspend (reversible) / revoke (permanent) / active
+// (unsuspend). Revocation is one-way: a revoked license can't be reactivated here.
+export function setLicenseStatus(db, id, status) {
+  if (!LICENSE_STATUSES.includes(status)) {
+    throw new LicenseError('bad_request', 'Unknown status', 400)
+  }
+  const license = getLicense(db, id)
+  if (!license) throw new LicenseError('bad_request', 'Unknown license', 404)
+  if (license.status === 'revoked') {
+    throw new LicenseError('bad_request', 'A revoked license cannot be changed', 409)
+  }
+  db.prepare('UPDATE licenses SET status = ? WHERE id = ?').run(status, id)
+}
+
+// Manually unbinds a machine (frees a seat) — the vendor helping a customer whose
+// self-service transfer limit is spent. Marks the row unbound rather than deleting,
+// preserving history; the machine can re-activate into the freed slot afterwards.
+export function unbindMachine(db, licenseId, machineId, now = Date.now()) {
+  const info = db
+    .prepare('UPDATE machines SET unbound_at = ? WHERE license_id = ? AND machine_id = ? AND unbound_at IS NULL')
+    .run(now, licenseId, machineId)
+  if (info.changes === 0) throw new LicenseError('bad_request', 'No such active binding', 404)
+}
+
 // Licenses for a customer, each annotated with its derived paid_until and current
 // bound-machine count — enough for the customer detail page.
 export function listLicensesForCustomer(db, customerId) {
@@ -81,7 +107,13 @@ export function getLicenseDetail(db, id) {
       'SELECT * FROM machines WHERE license_id = ? ORDER BY (unbound_at IS NOT NULL), last_seen_at DESC'
     )
     .all(id)
-  return { license, customer, machines, paidUntil: derivePaidUntil(db, id) }
+  return {
+    license,
+    customer,
+    machines,
+    paidUntil: derivePaidUntil(db, id),
+    payments: listPayments(db, id)
+  }
 }
 
 // Activates a license onto a machine and returns a freshly signed license string.

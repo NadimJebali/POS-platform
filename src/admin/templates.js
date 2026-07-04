@@ -43,7 +43,7 @@ const STYLE = `
 
 function layout(title, body, { authed = true } = {}) {
   const nav = authed
-    ? `<nav><a href="/admin">Customers</a><form class="inline" method="post" action="/admin/logout" style="display:inline"><button class="secondary">Log out</button></form></nav>`
+    ? `<nav><a href="/admin">Customers</a><a href="/admin/settings">Settings</a><form class="inline" method="post" action="/admin/logout" style="display:inline"><button class="secondary">Log out</button></form></nav>`
     : ''
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)} · POS admin</title><style>${STYLE}</style></head><body><header><h1>POS admin</h1>${nav}</header>${body}</body></html>`
 }
@@ -122,24 +122,91 @@ export function customerPage({ customer, licenses, newCode }) {
   return layout(customer.name, body)
 }
 
-export function licenseDetailPage({ license, customer, machines, paidUntil }) {
+function fmtMoney(millimes) {
+  return (Number(millimes || 0) / 1000).toFixed(3) + ' TND'
+}
+
+export function licenseDetailPage({ license, customer, machines, paidUntil, payments, error }) {
+  const revoked = license.status === 'revoked'
   const mRows = machines
-    .map(
-      (m) => `<tr>
+    .map((m) => {
+      const bound = !m.unbound_at
+      const seen = m.last_seen_at ? new Date(m.last_seen_at).toISOString().slice(0, 16).replace('T', ' ') : '—'
+      const unbindBtn = bound
+        ? `<form method="post" action="/admin/licenses/${license.id}/machines/${encodeURIComponent(m.machine_id)}/unbind" style="display:inline" onsubmit="return confirm('Unbind this machine and free its seat?')"><button class="secondary">Unbind</button></form>`
+        : ''
+      return `<tr>
         <td class="muted">${esc(m.machine_id)}</td>
-        <td>${m.unbound_at ? '<span class="muted">unbound</span>' : '<span class="badge active">bound</span>'}</td>
+        <td>${bound ? '<span class="badge active">bound</span>' : '<span class="muted">unbound</span>'}</td>
         <td>${esc(m.app_version) || '—'}</td>
-        <td class="muted">${m.last_seen_at ? new Date(m.last_seen_at).toISOString().slice(0, 16).replace('T', ' ') : '—'}</td></tr>`
+        <td class="muted">${seen}</td><td>${unbindBtn}</td></tr>`
+    })
+    .join('')
+  const pRows = payments
+    .map(
+      (p) => `<tr><td class="muted">${fmtDate(p.created_at)}</td>
+        <td>${p.months === 12 ? '1 year' : p.months + ' mo'}</td>
+        <td>${esc(p.method)}</td><td>${fmtMoney(p.amount_millimes)}</td>
+        <td class="muted">${esc(p.note) || ''}</td></tr>`
     )
     .join('')
+
+  // suspend/revoke controls depend on current status; revoked is terminal.
+  let statusControls = ''
+  if (license.status === 'active') {
+    statusControls = `
+      <form method="post" action="/admin/licenses/${license.id}/status" style="display:inline"><input type="hidden" name="status" value="suspended"><button class="secondary">Suspend</button></form>
+      <form method="post" action="/admin/licenses/${license.id}/status" style="display:inline" onsubmit="return confirm('Revoke this license permanently? This cannot be undone.')"><input type="hidden" name="status" value="revoked"><input type="hidden" name="confirm" value="yes"><button class="secondary">Revoke</button></form>`
+  } else if (license.status === 'suspended') {
+    statusControls = `
+      <form method="post" action="/admin/licenses/${license.id}/status" style="display:inline"><input type="hidden" name="status" value="active"><button class="secondary">Unsuspend</button></form>
+      <form method="post" action="/admin/licenses/${license.id}/status" style="display:inline" onsubmit="return confirm('Revoke this license permanently? This cannot be undone.')"><input type="hidden" name="status" value="revoked"><input type="hidden" name="confirm" value="yes"><button class="secondary">Revoke</button></form>`
+  } else {
+    statusControls = `<span class="muted">Revoked — terminal.</span>`
+  }
+
   const body = `
     <p><a href="/admin/customers/${customer.id}">← ${esc(customer.name)}</a></p>
+    ${error ? `<p class="err">${esc(error)}</p>` : ''}
     <h2>License #${license.id} ${statusBadge(license.status)}</h2>
     <p class="code">${esc(formatActivationCode(license.activation_code))}</p>
     <p class="muted">Seats: ${license.max_machines} · Paid until: ${fmtDate(paidUntil)} · Issued: ${fmtDate(license.created_at)}</p>
+    <div class="card"><h2>Status</h2>${statusControls}</div>
+    ${
+      revoked
+        ? ''
+        : `<div class="card"><h2>Record a payment</h2>
+      <form class="inline" method="post" action="/admin/licenses/${license.id}/payments">
+        <div><label for="months">Period</label><select id="months" name="months"><option value="1">1 month</option><option value="12">1 year</option></select></div>
+        <div><label for="amount">Amount (TND)</label><input id="amount" name="amount" type="number" step="0.001" min="0" value="0"></div>
+        <div><label for="method">Method</label><select id="method" name="method"><option>cash</option><option>transfer</option><option>card</option></select></div>
+        <button>Record payment</button>
+      </form></div>`
+    }
+    <h2>Payments (${payments.length})</h2>
+    <table><thead><tr><th>Date</th><th>Period</th><th>Method</th><th>Amount</th><th>Note</th></tr></thead>
+    <tbody>${pRows || '<tr><td colspan="5" class="muted">No payments recorded.</td></tr>'}</tbody></table>
     <h2>Machines</h2>
-    <table><thead><tr><th>Machine ID</th><th>State</th><th>App version</th><th>Last seen (UTC)</th></tr></thead>
-    <tbody>${mRows || '<tr><td colspan="4" class="muted">Never activated.</td></tr>'}</tbody></table>
-    <p class="muted">Payments, suspend/revoke, and settings arrive with issue #9.</p>`
+    <table><thead><tr><th>Machine ID</th><th>State</th><th>App version</th><th>Last seen (UTC)</th><th></th></tr></thead>
+    <tbody>${mRows || '<tr><td colspan="5" class="muted">Never activated.</td></tr>'}</tbody></table>`
   return layout(`License #${license.id}`, body)
+}
+
+export function settingsPage({ settings, saved, error }) {
+  const field = (key, label, hint) =>
+    `<div><label for="${key}">${esc(label)}</label><input id="${key}" name="${key}" type="number" min="0" value="${esc(settings[key])}"><span class="muted">${esc(hint)}</span></div>`
+  const body = `
+    <p><a href="/admin">← Customers</a></p>
+    <h2>Global settings</h2>
+    ${saved ? '<p style="color:#16a34a">Saved.</p>' : ''}
+    ${error ? `<p class="err">${esc(error)}</p>` : ''}
+    <p class="muted">These take effect on each client's next renewal — no app update needed.</p>
+    <form method="post" action="/admin/settings" style="display:grid; gap:.75rem; max-width:32rem">
+      ${field('renewal_window_days', 'Renewal window (days)', 'how long a signed key lasts before it must renew')}
+      ${field('grace_days', 'Paid-grace (days)', 'renewals still succeed this long past paid-until, with a banner')}
+      ${field('transfers_per_year', 'Machine transfers per year', 'self-service rebind limit')}
+      ${field('warn_days', 'Warn (days before expiry)', 'when the app shows the connectivity warning')}
+      <div><button>Save settings</button></div>
+    </form>`
+  return layout('Settings', body)
 }
