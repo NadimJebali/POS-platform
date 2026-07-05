@@ -19,16 +19,39 @@ export function signLicense(payload, privateKey) {
   return `${pB64}.${sig}`
 }
 
-// Verifies a license string against the given Ed25519 public key and returns the
-// decoded payload, or throws. This is the same check the app performs offline; the
-// renew endpoint (issue #7) uses it to self-authenticate a client's current key.
-export function verifyLicense(licenseString, publicKey) {
+// Verifies a license string and returns the decoded payload, or throws. The second
+// argument is EITHER a single Ed25519 public key (KeyObject or PEM — the original
+// behaviour, used by the server against its own key) OR a keyring for rotation:
+//
+//   { keys: { <kid>: publicKey, ... }, legacyKid: '<kid>' }
+//
+// With a keyring, the verifying key is chosen by the payload's `kid`; a pre-kid (legacy)
+// licence uses `legacyKid`, and an unknown `kid` fails closed. This is the same check the
+// app performs offline; the renew endpoint uses it to self-authenticate a client's key.
+export function verifyLicense(licenseString, keyOrKeyring) {
   const [pB64, sB64] = String(licenseString).trim().split('.')
   if (!pB64 || !sB64) throw new Error('License is malformed')
-  if (!crypto.verify(null, Buffer.from(pB64), publicKey, Buffer.from(sB64, 'base64'))) {
-    throw new Error('License signature is invalid')
+  const signatureOk = (key) =>
+    key != null && crypto.verify(null, Buffer.from(pB64), key, Buffer.from(sB64, 'base64'))
+
+  if (isKeyring(keyOrKeyring)) {
+    // Read the payload (still untrusted) only to pick the key by kid; the signature check
+    // below is what establishes trust, so a forged kid can't help an attacker.
+    const payload = JSON.parse(Buffer.from(pB64, 'base64').toString('utf8'))
+    const kid = payload.kid == null ? keyOrKeyring.legacyKid : payload.kid
+    if (!signatureOk(keyOrKeyring.keys[kid])) throw new Error('License signature is invalid')
+    return payload
   }
+
+  // Single-key path (unchanged): verify, then parse.
+  if (!signatureOk(keyOrKeyring)) throw new Error('License signature is invalid')
   return JSON.parse(Buffer.from(pB64, 'base64').toString('utf8'))
+}
+
+// A keyring is a plain object carrying a `keys` map (kid -> public key); a single key is
+// a KeyObject or a PEM string, neither of which has a `keys` property.
+function isKeyring(x) {
+  return x != null && typeof x === 'object' && typeof x.keys === 'object' && x.keys !== null
 }
 
 // Builds the payload for a freshly issued/renewed license. `now` and the windows
@@ -38,7 +61,7 @@ export function verifyLicense(licenseString, publicKey) {
 // `lid` (license id) is embedded so the renew endpoint can identify which license a
 // presented key belongs to. It's an internal integer, not the activation code, so
 // exposing it in the (readable) payload is harmless. The app's verifier ignores it.
-export function buildPayload({ lid, machineId, name, now, renewalWindowDays, warnDays, graceUntil }) {
+export function buildPayload({ lid, machineId, name, now, renewalWindowDays, warnDays, graceUntil, kid }) {
   const payload = {
     lid,
     machineId,
@@ -49,5 +72,8 @@ export function buildPayload({ lid, machineId, name, now, renewalWindowDays, war
   // Only present when the subscription has lapsed into its paid-grace window, so the
   // app shows the "please renew" banner. Absent = fully paid up.
   if (graceUntil != null) payload.graceUntil = graceUntil
+  // Key id for rotation. Absent = signed by the legacy key (byte-compatible with every
+  // licence issued before rotation existed); present once the server signs with a kid.
+  if (kid != null) payload.kid = kid
   return payload
 }
