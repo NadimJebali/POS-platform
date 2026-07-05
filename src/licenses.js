@@ -4,6 +4,7 @@ import { getIntSetting } from './db.js'
 import { generateActivationCode, normalizeActivationCode } from './activation-code.js'
 import { signLicense, verifyLicense, buildPayload } from './license-format.js'
 import { derivePaidUntil, listPayments, billingState } from './payments.js'
+import { isRefusalCode } from './refusal-codes.js'
 
 // A domain error carrying a stable machine-readable `code` so the HTTP layer can map
 // each failure to a distinct response and the app can branch on it (e.g. bound
@@ -11,6 +12,10 @@ import { derivePaidUntil, listPayments, billingState } from './payments.js'
 export class LicenseError extends Error {
   constructor(code, message, status = 400) {
     super(message)
+    // Guard the boundary vocabulary: the code must be a known member of the shared
+    // REFUSAL table, so a typo'd/renamed code fails loudly here instead of leaking an
+    // unknown code the app can't branch on.
+    if (!isRefusalCode(code)) throw new Error(`Unknown refusal code: ${code}`)
     this.code = code
     this.status = status
   }

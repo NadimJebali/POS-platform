@@ -21,6 +21,7 @@ const softwareRoot = process.env.POS_SOFTWARE_DIR || join(repoRoot, '..', 'POS-s
 // source (in this repo) → destination (in POS-software). Add a row to vendor more.
 const FILES = [
   { src: 'src/license-format.js', dest: 'src/shared/license-format.js' },
+  { src: 'src/refusal-codes.js', dest: 'src/shared/refusal-codes.js' },
   { src: 'test/golden-licence.js', dest: 'tests/golden-licence.js' }
 ]
 const MANIFEST = 'tests/protocol-manifest.json' // in POS-software, keyed by dest path
