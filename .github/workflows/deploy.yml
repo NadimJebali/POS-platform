@@ -44,6 +44,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # The runner has repo access (contents: read); it ships the compose/Caddy config
+      # to the droplet by scp, so the droplet never needs a GitHub credential of its own
+      # (this repo is private — a droplet-side `git pull` can't authenticate).
+      - uses: actions/checkout@v4
+
       - name: Deploy over SSH
         env:
           SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -80,31 +85,30 @@ jobs:
 
           SSH="ssh -i deploy_key -o UserKnownHostsFile=known_hosts -o StrictHostKeyChecking=yes"
 
-          # Wait for first-boot provisioning, then make sure Docker, git, and the repo
-          # are actually present — the deploy self-heals rather than depending on
-          # cloud-init having succeeded.
+          # Wait for first-boot provisioning, then make sure Docker is present and the
+          # app directory (with its bind-mount data dirs) exists — the deploy self-heals
+          # rather than depending on cloud-init having succeeded. No git on the droplet:
+          # the config is scp'd from the runner below.
           $SSH root@"$HOST" 'set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
             cloud-init status --wait >/dev/null 2>&1 || true
-            command -v git >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq git; }
             if ! command -v docker >/dev/null 2>&1; then
               curl -fsSL https://get.docker.com | sh
               systemctl enable --now docker
             fi
-            if [ ! -d /root/pos-platform/.git ]; then
-              rm -rf /root/pos-platform
-              git clone https://github.com/NadimJebali/POS-platform.git /root/pos-platform
-            fi'
+            mkdir -p /root/pos-platform/data /root/pos-platform/updates'
 
-          # Copy the env file up (the directory is guaranteed to exist now).
-          scp -i deploy_key -o UserKnownHostsFile=known_hosts env.deploy \
-            root@"$HOST":/root/pos-platform/.env
+          # Ship the env file + the compose/Caddy config straight from the runner's
+          # checkout, so the droplet needs no GitHub access (private repo). The image
+          # itself comes from Docker Hub (public) via `docker compose pull`.
+          scp -i deploy_key -o UserKnownHostsFile=known_hosts \
+            env.deploy docker-compose.yml Caddyfile \
+            root@"$HOST":/root/pos-platform/
+          $SSH root@"$HOST" 'mv /root/pos-platform/env.deploy /root/pos-platform/.env'
 
-          # Refresh compose/Caddy config from git, pull the pinned (public) image,
-          # and restart. No docker login needed — the image is public.
+          # Pull the pinned (public) image and restart. No docker login needed.
           $SSH root@"$HOST" 'set -euo pipefail
             cd /root/pos-platform
-            git pull --ff-only
             chmod 600 .env
             docker compose pull
             docker compose up -d'
