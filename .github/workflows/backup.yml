@@ -71,9 +71,18 @@ jobs:
           # holds customer names/phones and the payments ledger.
           gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" -c --cipher-algo AES256 -o "pos-$STAMP.db.gz.gpg" snap.db.gz
 
-          # Provision the bucket on first run (no-op once it exists), so there's no manual
-          # console step — the workflow is self-contained.
-          aws --endpoint-url "$SPACES_ENDPOINT" s3 mb "s3://$SPACES_BUCKET" 2>/dev/null || true
+          # Ensure the bucket exists, provisioning it on first run. Surface the real
+          # CreateBucket error if it can't be made (e.g. the name is taken in Spaces'
+          # GLOBAL namespace → choose a unique SPACES_BUCKET).
+          if aws --endpoint-url "$SPACES_ENDPOINT" s3api head-bucket --bucket "$SPACES_BUCKET" 2>/dev/null; then
+            echo "bucket $SPACES_BUCKET exists"
+          else
+            echo "bucket $SPACES_BUCKET not found — creating in $SPACES_REGION…"
+            if ! aws --endpoint-url "$SPACES_ENDPOINT" s3 mb "s3://$SPACES_BUCKET"; then
+              echo "::error::Could not create Spaces bucket '$SPACES_BUCKET'. If the name is taken in Spaces' global namespace, set the SPACES_BUCKET variable to a unique name (e.g. pos-platform-backups-nj), or create it in the DO console (Spaces → Create, region $SPACES_REGION)."
+              exit 1
+            fi
+          fi
           aws --endpoint-url "$SPACES_ENDPOINT" s3 cp "pos-$STAMP.db.gz.gpg" "s3://$SPACES_BUCKET/pos-$STAMP.db.gz.gpg"
           echo "uploaded s3://$SPACES_BUCKET/pos-$STAMP.db.gz.gpg"
 
