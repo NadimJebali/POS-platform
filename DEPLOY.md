@@ -86,26 +86,77 @@ hashed. Create a customer, issue a license, and confirm the activation code work
 
 ## 6. Nightly off-droplet backup (DO Spaces)
 
-1. Create a Spaces bucket (e.g. `pos-backups`) in the same region.
-2. Create `/root/pos-platform/backup.env` (chmod 600, gitignored):
+The whole business (customers, licenses, payments) is one SQLite file at
+`/root/pos-platform/data/pos-platform.db`. `scripts/backup.sh` takes a consistent
+snapshot (SQLite online backup, safe while the server writes), gzips it, and uploads
+it to a Spaces bucket. Run everything below **on the droplet** (`ssh root@pos.nadimjebali.engineer`).
 
-   ```
-   SPACES_BUCKET=pos-backups
-   SPACES_ENDPOINT=https://fra1.digitaloceanspaces.com
-   AWS_ACCESS_KEY_ID=<spaces access key>
-   AWS_SECRET_ACCESS_KEY=<spaces secret key>
-   ```
+**Prerequisites** (cloud-init installs these; verify):
 
-3. Test it, then schedule it:
+```bash
+command -v sqlite3 && command -v aws || apt-get update && apt-get install -y sqlite3 awscli
+```
 
-   ```bash
-   set -a; . ./backup.env; set +a; bash scripts/backup.sh      # one manual run
-   crontab -e
-   # 0 3 * * * cd /root/pos-platform && set -a && . ./backup.env && set +a && bash scripts/backup.sh >> /var/log/pos-backup.log 2>&1
-   ```
+**Step 1 — create the Spaces bucket.** In the DO console → Spaces, create
+`pos-platform-backups` in the same region as the droplet (fra1). Set a lifecycle rule
+to expire objects after e.g. 90 days so old backups don't accumulate forever.
 
-4. **Restore drill (do this once):** download a `.gz` from Spaces, `gunzip` it, and
-   open it with `sqlite3 <file> '.tables'` to confirm the data is intact.
+**Step 2 — write the backup config** (chmod 600, gitignored — never in git). Paste your
+**Spaces** access/secret keys (create a Spaces key pair in DO → API → Spaces Keys):
+
+```bash
+umask 077
+cat > /root/pos-platform/backup.env <<'EOF'
+DB_FILE=/root/pos-platform/data/pos-platform.db
+SPACES_BUCKET=pos-platform-backups
+SPACES_ENDPOINT=https://fra1.digitaloceanspaces.com
+AWS_ACCESS_KEY_ID=REPLACE_WITH_SPACES_ACCESS_KEY
+AWS_SECRET_ACCESS_KEY=REPLACE_WITH_SPACES_SECRET_KEY
+KEEP_DAYS=14
+EOF
+chmod 600 /root/pos-platform/backup.env
+```
+
+**Step 3 — run it once by hand** and confirm a `.gz` lands in Spaces:
+
+```bash
+cd /root/pos-platform
+set -a; . ./backup.env; set +a
+bash scripts/backup.sh
+# expect: "backed up .../pos-platform-<stamp>.db.gz to s3://pos-platform-backups/"
+aws --endpoint-url "$SPACES_ENDPOINT" s3 ls "s3://$SPACES_BUCKET/"
+```
+
+**Step 4 — schedule it nightly** (03:00 UTC). This is idempotent — it replaces any
+existing backup line rather than stacking duplicates:
+
+```bash
+LINE='0 3 * * * cd /root/pos-platform && set -a && . ./backup.env && set +a && bash scripts/backup.sh >> /var/log/pos-backup.log 2>&1'
+( crontab -l 2>/dev/null | grep -v 'scripts/backup.sh'; echo "$LINE" ) | crontab -
+crontab -l   # verify the line is there
+```
+
+**Step 5 — restore drill (do this once; a backup you've never restored is only a hope).**
+Pull the newest backup, unpack it, and confirm the real data is inside:
+
+```bash
+cd /tmp
+set -a; . /root/pos-platform/backup.env; set +a
+LATEST=$(aws --endpoint-url "$SPACES_ENDPOINT" s3 ls "s3://$SPACES_BUCKET/" | sort | tail -1 | awk '{print $4}')
+aws --endpoint-url "$SPACES_ENDPOINT" s3 cp "s3://$SPACES_BUCKET/$LATEST" /tmp/restore-test.db.gz
+gunzip -f /tmp/restore-test.db.gz
+echo "tables:"; sqlite3 /tmp/restore-test.db '.tables'
+sqlite3 /tmp/restore-test.db \
+  'SELECT (SELECT COUNT(*) FROM customers) AS customers,
+          (SELECT COUNT(*) FROM licenses)  AS licenses,
+          (SELECT COUNT(*) FROM payments)  AS payments;'
+rm -f /tmp/restore-test.db
+```
+
+Seeing your tables and non-crazy counts proves the backups are genuine and restorable.
+**A real disaster recovery** is then just: `gunzip` a snapshot onto
+`/root/pos-platform/data/pos-platform.db` (with the stack stopped: `docker compose down`
+first, `docker compose up -d` after).
 
 ## 7. CI/CD (GitHub Actions)
 
