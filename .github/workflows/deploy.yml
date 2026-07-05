@@ -106,10 +106,17 @@ jobs:
             root@"$HOST":/root/pos-platform/
           $SSH root@"$HOST" 'mv /root/pos-platform/env.deploy /root/pos-platform/.env'
 
-          # Pull the pinned (public) image and restart. No docker login needed.
+          # Take a local rollback snapshot of the DB before restarting, so a bad deploy or
+          # migration can be reverted on the spot. (Off-droplet disaster-recovery backups
+          # are the nightly backup.yml workflow; this is just the last-few local ones.)
           $SSH root@"$HOST" 'set -euo pipefail
             cd /root/pos-platform
             chmod 600 .env
+            if command -v sqlite3 >/dev/null 2>&1 && [ -f data/pos-platform.db ]; then
+              mkdir -p data/backups
+              sqlite3 data/pos-platform.db ".backup data/backups/predeploy-$(date -u +%Y%m%dT%H%M%SZ).db" || true
+              ls -1t data/backups/predeploy-*.db 2>/dev/null | tail -n +6 | xargs -r rm -f
+            fi
             docker compose pull
             docker compose up -d'
 

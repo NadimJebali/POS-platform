@@ -1,0 +1,85 @@
+name: backup
+
+# Nightly off-droplet backup of the SQLite database to DigitalOcean Spaces, with an
+# in-CI restore drill — a backup you never restore is a hope, not a backup, so every run
+# restores the snapshot it just took and fails (visibly, red ✗) if it can't.
+#
+# Required config (Settings → Secrets and variables → Actions):
+#   secrets:  SSH_PRIVATE_KEY, BACKUP_PASSPHRASE, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   variables: DOMAIN, SPACES_BUCKET, SPACES_ENDPOINT   (e.g. https://fra1.digitaloceanspaces.com)
+# Long-term retention is a Spaces bucket lifecycle rule (see DEPLOY.md §6), not this job.
+on:
+  schedule:
+    - cron: '0 3 * * *' # 03:00 UTC nightly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Snapshot → encrypt → Spaces → restore drill
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOST: ${{ vars.DOMAIN }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          SPACES_BUCKET: ${{ vars.SPACES_BUCKET }}
+          SPACES_ENDPOINT: ${{ vars.SPACES_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          # Fail early with an actionable message if any required config is missing.
+          : "${HOST:?set the DOMAIN variable}"
+          : "${BACKUP_PASSPHRASE:?set the BACKUP_PASSPHRASE secret}"
+          : "${AWS_ACCESS_KEY_ID:?set the AWS_ACCESS_KEY_ID secret}"
+          : "${AWS_SECRET_ACCESS_KEY:?set the AWS_SECRET_ACCESS_KEY secret}"
+          : "${SPACES_BUCKET:?set the SPACES_BUCKET variable}"
+          : "${SPACES_ENDPOINT:?set the SPACES_ENDPOINT variable}"
+
+          printf '%s\n' "$SSH_KEY" > deploy_key
+          chmod 600 deploy_key
+          ssh-keyscan -T 10 -H "$HOST" > known_hosts 2>/dev/null || true
+          [ -s known_hosts ] || { echo "::error::Can't reach $HOST over SSH."; exit 1; }
+          SSH="ssh -i deploy_key -o UserKnownHostsFile=known_hosts -o StrictHostKeyChecking=yes"
+
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+
+          # Consistent snapshot ON the droplet (SQLite online backup, safe while the
+          # server writes), gzipped straight to this job's stdout. The install chatter is
+          # sent to stderr so only the gzip bytes reach snap.db.gz.
+          $SSH root@"$HOST" 'set -euo pipefail
+            command -v sqlite3 >/dev/null 2>&1 || { { apt-get update -qq && apt-get install -y -qq sqlite3; } >&2; }
+            sqlite3 /root/pos-platform/data/pos-platform.db ".backup /tmp/pos-snap.db"
+            gzip -c /tmp/pos-snap.db
+            rm -f /tmp/pos-snap.db' > snap.db.gz
+          [ -s snap.db.gz ] || { echo "::error::Snapshot came back empty."; exit 1; }
+
+          # Encrypt (AES-256, symmetric) BEFORE it leaves for object storage — the file
+          # holds customer names/phones and the payments ledger.
+          gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" -c --cipher-algo AES256 -o "pos-$STAMP.db.gz.gpg" snap.db.gz
+
+          aws --endpoint-url "$SPACES_ENDPOINT" s3 cp "pos-$STAMP.db.gz.gpg" "s3://$SPACES_BUCKET/pos-$STAMP.db.gz.gpg"
+          echo "uploaded s3://$SPACES_BUCKET/pos-$STAMP.db.gz.gpg"
+
+          # ---- Restore drill: prove this exact backup is usable ----
+          sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
+          gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" -o restored.db.gz -d "pos-$STAMP.db.gz.gpg"
+          gunzip -f restored.db.gz # -> restored.db
+          ic="$(sqlite3 restored.db 'PRAGMA integrity_check;')"
+          [ "$ic" = "ok" ] || { echo "::error::integrity_check failed: $ic"; exit 1; }
+          for t in customers licenses payments machines settings; do
+            n="$(sqlite3 restored.db "SELECT count(*) FROM $t;")" || { echo "::error::table $t missing or unreadable"; exit 1; }
+            echo "  $t: $n rows"
+          done
+          echo "restore drill OK ($STAMP) — integrity_check=ok, core tables present"
+
+          rm -f deploy_key
