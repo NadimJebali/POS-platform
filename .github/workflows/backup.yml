@@ -71,6 +71,9 @@ jobs:
           # holds customer names/phones and the payments ledger.
           gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" -c --cipher-algo AES256 -o "pos-$STAMP.db.gz.gpg" snap.db.gz
 
+          # Provision the bucket on first run (no-op once it exists), so there's no manual
+          # console step — the workflow is self-contained.
+          aws --endpoint-url "$SPACES_ENDPOINT" s3 mb "s3://$SPACES_BUCKET" 2>/dev/null || true
           aws --endpoint-url "$SPACES_ENDPOINT" s3 cp "pos-$STAMP.db.gz.gpg" "s3://$SPACES_BUCKET/pos-$STAMP.db.gz.gpg"
           echo "uploaded s3://$SPACES_BUCKET/pos-$STAMP.db.gz.gpg"
 
