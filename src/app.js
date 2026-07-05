@@ -13,6 +13,7 @@ import { downloadPage } from './download-page.js'
 import { getAllSettings } from './db.js'
 import { getAsset, getAssetMeta } from './assets.js'
 import { monogramSvg, defaultOgPng } from './branding.js'
+import { ACTIVATE_BODY, REBIND_BODY, RENEW_BODY } from './wire-schemas.js'
 
 // Per-IP limits on the public write endpoints. activate/rebind are the guessable
 // ones (someone probing activation codes), so they're tighter; renew is called
@@ -41,6 +42,11 @@ export function buildApp({
   // The server verifies clients' current keys against its OWN public key, derived
   // once from the signing key — this is what makes /renew self-authenticating.
   const publicKey = crypto.createPublicKey(privateKey)
+
+  // A schema violation on a public endpoint (attachValidation surfaces it as
+  // request.validationError) becomes a clean bad_request the app can branch on, instead
+  // of Fastify's default {error:'Bad Request'} shape or a failure deep in domain code.
+  const badRequest = (reply) => reply.status(400).send({ error: 'bad_request', message: 'The request was malformed' })
 
   // Turns a domain call into an HTTP response, mapping LicenseError -> its status.
   const handle = (request, reply, fn) => {
@@ -130,24 +136,39 @@ export function buildApp({
 
     // POST /activate — bind a machine to a license and return a signed license key.
     // Body: { code, machineId, appVersion? }
-    pub.post('/activate', { config: { rateLimit: rateLimits.activate } }, async (request, reply) => {
-      const { code, machineId, appVersion } = request.body ?? {}
-      return handle(request, reply, () => activate(db, { code, machineId, appVersion }, { privateKey }))
-    })
+    pub.post(
+      '/activate',
+      { config: { rateLimit: rateLimits.activate }, schema: { body: ACTIVATE_BODY }, attachValidation: true },
+      async (request, reply) => {
+        if (request.validationError) return badRequest(reply)
+        const { code, machineId, appVersion } = request.body ?? {}
+        return handle(request, reply, () => activate(db, { code, machineId, appVersion }, { privateKey }))
+      }
+    )
 
     // POST /renew — exchange the client's current signed key for a fresh one,
     // enforcing status and payment standing. Body: { license_key, machineId?, appVersion? }
-    pub.post('/renew', { config: { rateLimit: rateLimits.renew } }, async (request, reply) => {
-      const { license_key, machineId, appVersion } = request.body ?? {}
-      return handle(request, reply, () => renew(db, { license_key, machineId, appVersion }, { privateKey, publicKey }))
-    })
+    pub.post(
+      '/renew',
+      { config: { rateLimit: rateLimits.renew }, schema: { body: RENEW_BODY }, attachValidation: true },
+      async (request, reply) => {
+        if (request.validationError) return badRequest(reply)
+        const { license_key, machineId, appVersion } = request.body ?? {}
+        return handle(request, reply, () => renew(db, { license_key, machineId, appVersion }, { privateKey, publicKey }))
+      }
+    )
 
     // POST /rebind — self-service machine transfer: move a license onto a new machine.
     // Body: { code, machineId, appVersion? }
-    pub.post('/rebind', { config: { rateLimit: rateLimits.rebind } }, async (request, reply) => {
-      const { code, machineId, appVersion } = request.body ?? {}
-      return handle(request, reply, () => rebind(db, { code, machineId, appVersion }, { privateKey }))
-    })
+    pub.post(
+      '/rebind',
+      { config: { rateLimit: rateLimits.rebind }, schema: { body: REBIND_BODY }, attachValidation: true },
+      async (request, reply) => {
+        if (request.validationError) return badRequest(reply)
+        const { code, machineId, appVersion } = request.body ?? {}
+        return handle(request, reply, () => rebind(db, { code, machineId, appVersion }, { privateKey }))
+      }
+    )
   })
 
   // Admin panel (server-rendered HTML) under /admin.
