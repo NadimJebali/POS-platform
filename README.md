@@ -6,11 +6,23 @@ Node.js + SQLite (`node:sqlite`, no native build) behind Caddy, deployed with Do
 Compose on a single droplet. The POS app runs fully offline day-to-day; it only talks
 to this server to **activate** and to **renew** its short-lived, machine-bound license.
 
+**Live:** [pos.nadimjebali.engineer](https://pos.nadimjebali.engineer)
+
+![The public download page](docs/download-page.png)
+
 ## Status
 
-The full license server is in: activation (#6), renewal (#7), admin with billing
-(#8, #9), and self-service rebind (#10). What remains is deployment/hardening on the
-droplet (#11) and the app-side and update-feed work in the POS-software repo.
+**Live in production.** Activation, renewal, self-service rebind, the admin panel, the
+public download page, and the auto-update feed are all deployed — Docker Compose +
+Caddy auto-TLS on a DigitalOcean droplet, with GitHub Actions CI/CD (build → Docker Hub
+→ droplet pull) and Terraform-managed infrastructure. Per-IP rate limiting protects the
+public endpoints.
+
+The POS app's side of the integration (activate-by-code, silent background renewal,
+rebind, and background auto-update) ships in the
+[POS-software](https://github.com/NadimJebali/POS-software) repo. What remains is purely
+operational hardening on the droplet — nightly off-droplet backups + a rehearsed restore
+drill (see [`DEPLOY.md`](DEPLOY.md) §6).
 
 ## Admin panel
 
@@ -25,7 +37,25 @@ Server-rendered HTML under `/admin`, single account. Set `ADMIN_PASSWORD_HASH`
 - Edit global settings (renewal window, grace days, transfer limit, warn days) — they
   take effect on each client's next renewal, no app update needed.
 
-The session is an httpOnly cookie; login is rate limited.
+The session is an httpOnly cookie; login is rate limited. Issuing a code prompts
+"Has the customer paid?" so the subscription starts in the right state; billing status
+(active / expiring / grace / lapsed / never-paid) shows at a glance.
+
+![Admin — a customer, their licenses and billing status](docs/admin-customer.png)
+
+## Public download page & update feed
+
+`GET /` is a public, server-rendered download page — **off by default**, enabled in
+**Admin → Settings**. It shows a "Download for Windows" button for the latest build and
+a version history (styled as a printed receipt), both read from `releases.json` in the
+updates directory. Content (product name, tagline, description, contact) is editable in
+settings.
+
+`/updates/*` is a static feed (installers + `latest.yml`) the POS app polls for
+background auto-updates. The vendor publishes to it from the POS-software repo
+(`npm run publish:update`), which uploads the installer, the `latest.yml` metadata (with
+SHA-512), and appends the release to `releases.json`. No authentication; update checks
+never touch the licensing endpoints.
 
 ## Requirements
 
