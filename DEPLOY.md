@@ -114,13 +114,15 @@ Create a Spaces key pair in DO → API → Spaces Keys.
 | secret | `AWS_ACCESS_KEY_ID` | Spaces access key |
 | secret | `AWS_SECRET_ACCESS_KEY` | Spaces secret key |
 | variable | `SPACES_BUCKET` | `pos-platform-backups` |
-| variable | `SPACES_ENDPOINT` | `https://fra1.digitaloceanspaces.com` |
 
-`SSH_PRIVATE_KEY` and `DOMAIN` are already set (used by deploy). 
+`SSH_PRIVATE_KEY`, `DOMAIN`, and `DROPLET_REGION` are already set (used by deploy/infra).
+The Spaces endpoint is **derived** from `DROPLET_REGION` (e.g. `fra1` →
+`https://fra1.digitaloceanspaces.com`), so there's nothing else to set — and it doesn't
+reuse the Terraform-state `SPACES_ENDPOINT` variable, which points at a different bucket.
 
 **3 — verify.** Actions → **backup** → **Run workflow**. A green run means the snapshot
 uploaded *and* the restore drill passed (the log prints the row counts). Confirm the
-object landed: `aws --endpoint-url $SPACES_ENDPOINT s3 ls s3://pos-platform-backups/`.
+object landed: `aws --endpoint-url https://fra1.digitaloceanspaces.com s3 ls s3://pos-platform-backups/`.
 
 ### Real disaster recovery (restore for real)
 
