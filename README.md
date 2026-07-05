@@ -49,7 +49,9 @@ The session is an httpOnly cookie; login is rate limited. Issuing a code prompts
 **Admin → Settings**. It shows a "Download for Windows" button for the latest build and
 a version history (styled as a printed receipt), both read from `releases.json` in the
 updates directory. Content (product name, tagline, description, contact) is editable in
-settings.
+settings. Zero-JS, self-contained, and responsive down to phones:
+
+<p align="center"><img src="docs/download-page-mobile.png" width="300" alt="The download page on a phone" /></p>
 
 `/updates/*` is a static feed (installers + `latest.yml`) the POS app polls for
 background auto-updates. The vendor publishes to it from the POS-software repo
