@@ -17,10 +17,12 @@ services:
     # Bind-mount ./data so the SQLite file is directly reachable on the host for the
     # nightly backup (scripts/backup.sh). ./data is gitignored.
     # ./updates (installers + releases.json, uploaded by the app's publish script) is
-    # mounted read-only so the public download page can read the release manifest.
+    # mounted read-write so the download page can read the manifest AND the admin can
+    # delete a published version (removing its installer + manifest entry). Caddy's mount
+    # (below) stays read-only — it only serves.
     volumes:
       - ./data:/data
-      - ./updates:/updates:ro
+      - ./updates:/updates
     expose:
       - '3000'
 

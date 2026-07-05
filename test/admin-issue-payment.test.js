@@ -96,6 +96,27 @@ test('the issue form no longer asks about payment upfront (no period selector)',
   assert.doesNotMatch(page.body, /Start subscription/)
 })
 
+test('the paid prompt offers an amount (TND) field', async () => {
+  const { db, app, cookie } = await loggedIn()
+  const cid = insertCustomer(db, 'Café Amount UI')
+  const res = await issue(app, cookie, cid)
+  const page = await getPage(app, cookie, res.headers.location)
+  assert.match(page.body, /name="amount"/)
+})
+
+test('recording the paid prompt with an amount stores it in millimes', async () => {
+  const { db, app, cookie } = await loggedIn()
+  const cid = insertCustomer(db, 'Café Amount')
+  await issue(app, cookie, cid)
+  const lid = db.prepare('SELECT id FROM licenses WHERE customer_id = ?').get(cid).id
+
+  await post(app, cookie, `/admin/licenses/${lid}/payments`, { months: '1', method: 'initial', amount: '30.000' })
+
+  const pay = db.prepare('SELECT amount_millimes, months FROM payments WHERE license_id = ?').get(lid)
+  assert.equal(pay.amount_millimes, 30000) // 30.000 TND stored as integer millimes
+  assert.equal(pay.months, 1)
+})
+
 test('the back param cannot redirect outside the admin (open-redirect guard)', async () => {
   const { db, app, cookie } = await loggedIn()
   const cid = insertCustomer(db, 'Café Redirect')

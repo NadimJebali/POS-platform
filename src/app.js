@@ -97,7 +97,7 @@ export function buildApp({
   })
 
   // Admin panel (server-rendered HTML) under /admin.
-  registerAdmin(app, { db, adminPasswordHash, cookieSecure })
+  registerAdmin(app, { db, adminPasswordHash, cookieSecure, updatesDir })
 
   return app
 }

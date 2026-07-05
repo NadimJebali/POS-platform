@@ -139,15 +139,15 @@ export function customerPage({ customer, licenses, newCode, newLicenseId, error 
   // recordable later from the license page).
   const paidPrompt = newLicenseId
     ? `<h2>Has the customer paid?</h2>
-       <form method="post" action="/admin/licenses/${newLicenseId}/payments" style="display:inline">
-         <input type="hidden" name="months" value="1"><input type="hidden" name="method" value="initial">
+       <form class="inline" method="post" action="/admin/licenses/${newLicenseId}/payments">
+         <input type="hidden" name="method" value="initial">
          <input type="hidden" name="back" value="/admin/customers/${customer.id}">
-         <button>Paid — 1 month</button></form>
-       <form method="post" action="/admin/licenses/${newLicenseId}/payments" style="display:inline">
-         <input type="hidden" name="months" value="12"><input type="hidden" name="method" value="initial">
-         <input type="hidden" name="back" value="/admin/customers/${customer.id}">
-         <button>Paid — 1 year</button></form>
-       <a href="/admin/customers/${customer.id}"><button type="button" class="secondary">Not yet</button></a>`
+         <div><label for="pp-amount">Amount (TND)</label><input id="pp-amount" name="amount" type="number" step="0.001" min="0" placeholder="0.000"></div>
+         <div><label for="pp-months">Period</label><select id="pp-months" name="months"><option value="1">1 month</option><option value="12">1 year</option></select></div>
+         <button>Record payment</button>
+       </form>
+       <a href="/admin/customers/${customer.id}"><button type="button" class="secondary">Not yet</button></a>
+       <p class="muted">Amount is optional — leave it blank to just start the subscription.</p>`
     : ''
   const banner = newCode
     ? `<div class="card"><h2>License issued — hand this code to the customer</h2>
@@ -283,11 +283,24 @@ export function licenseDetailPage({ license, customer, machines, paidUntil, bill
   return layout(`License #${license.id}`, body)
 }
 
-export function settingsPage({ settings, saved, error }) {
+export function settingsPage({ settings, saved, error, releases = [], latestVersion = null }) {
   const field = (key, label, hint) =>
     `<div><label for="${key}">${esc(label)}</label><input id="${key}" name="${key}" type="number" min="0" value="${esc(settings[key])}"><span class="muted">${esc(hint)}</span></div>`
   const text = (key, label, hint) =>
     `<div><label for="${key}">${esc(label)}</label><input id="${key}" name="${key}" value="${esc(settings[key] ?? '')}"><span class="muted">${esc(hint)}</span></div>`
+
+  // Published versions on the download feed. The live (latest.yml) one can't be deleted.
+  const relSize = (b) => (b > 0 ? `${Math.round(b / 1e6)} MB` : '')
+  const relRows = releases
+    .map((r) => {
+      const action =
+        r.version === latestVersion
+          ? '<span class="badge active">current</span>'
+          : `<form method="post" action="/admin/releases/delete" style="display:inline" onsubmit="return confirm('Delete version ${esc(r.version)}? Its installer is removed from the download page and the server — this cannot be undone.')"><input type="hidden" name="version" value="${esc(r.version)}"><button class="secondary">Delete</button></form>`
+      return `<tr><td>v${esc(r.version)}</td><td class="muted">${esc(fmtDate(r.date))}</td><td class="muted">${esc(relSize(r.size))}</td><td class="muted">${esc(r.notes ?? '')}</td><td>${action}</td></tr>`
+    })
+    .join('')
+
   const body = `
     <p><a href="/admin">← Customers</a></p>
     <h2>Global settings</h2>
@@ -309,6 +322,11 @@ export function settingsPage({ settings, saved, error }) {
       ${text('contact_phone', 'Contact phone', 'shown in the footer, tappable')}
       ${text('contact_email', 'Contact email', 'shown in the header and footer')}
       <div><button>Save settings</button></div>
-    </form>`
+    </form>
+
+    <h2>Published versions</h2>
+    <p class="muted">Builds live on the download feed. The current (live) version can't be deleted — publish a newer build first, then delete the old one.</p>
+    <table><thead><tr><th>Version</th><th>Date</th><th>Size</th><th>Notes</th><th></th></tr></thead>
+    <tbody>${relRows || '<tr><td colspan="5" class="muted">No published versions yet.</td></tr>'}</tbody></table>`
   return layout('Settings', body)
 }

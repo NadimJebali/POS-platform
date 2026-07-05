@@ -24,6 +24,7 @@ import {
   LicenseError
 } from '../licenses.js'
 import { recordPayment } from '../payments.js'
+import { readReleases, currentLatestVersion, deleteRelease, ReleaseError } from '../releases.js'
 import { getAllSettings, setIntSetting, setTextSetting } from '../db.js'
 import {
   loginPage,
@@ -33,8 +34,18 @@ import {
   settingsPage
 } from './templates.js'
 
-export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
+export function registerAdmin(app, { db, adminPasswordHash, cookieSecure, updatesDir = './updates' }) {
   const limiter = createLoginLimiter()
+
+  // Settings page data, including the published versions (from the updates feed) and
+  // which one is live (latest.yml) so the admin can't delete the current build.
+  const settingsView = (extra = {}) =>
+    settingsPage({
+      settings: getAllSettings(db),
+      releases: readReleases(updatesDir),
+      latestVersion: currentLatestVersion(updatesDir),
+      ...extra
+    })
 
   const sendHtml = (reply, body, status = 200) =>
     reply.status(status).type('text/html; charset=utf-8').send(body)
@@ -238,8 +249,7 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
     })
 
     admin.get('/admin/settings', async (request, reply) => {
-      const saved = request.query?.saved === '1'
-      return sendHtml(reply, settingsPage({ settings: getAllSettings(db), saved }))
+      return sendHtml(reply, settingsView({ saved: request.query?.saved === '1' }))
     })
 
     admin.post('/admin/settings', async (request, reply) => {
@@ -255,7 +265,20 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure }) {
         }
         return reply.redirect('/admin/settings?saved=1')
       } catch (err) {
-        return sendHtml(reply, settingsPage({ settings: getAllSettings(db), error: err.message }), 400)
+        return sendHtml(reply, settingsView({ error: err.message }), 400)
+      }
+    })
+
+    // Delete a published app version from the download feed (installer + blockmap +
+    // its releases.json entry). The live (latest.yml) version is protected server-side.
+    admin.post('/admin/releases/delete', async (request, reply) => {
+      const version = String(request.body?.version || '')
+      try {
+        deleteRelease(updatesDir, version)
+        return reply.redirect('/admin/settings?saved=1')
+      } catch (err) {
+        if (err instanceof ReleaseError) return sendHtml(reply, settingsView({ error: err.message }), 400)
+        throw err
       }
     })
   })
