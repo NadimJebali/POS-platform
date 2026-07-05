@@ -6,8 +6,9 @@ name: backup
 #
 # Required config (Settings → Secrets and variables → Actions):
 #   secrets:  SSH_PRIVATE_KEY, BACKUP_PASSPHRASE, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-#   variables: DOMAIN, SPACES_BUCKET, DROPLET_REGION   (the Spaces endpoint is derived
-#              from the region, e.g. fra1 -> https://fra1.digitaloceanspaces.com)
+#   variables: DOMAIN, SPACES_BUCKET_BACKUP, DROPLET_REGION   (the Spaces endpoint is
+#              derived from the region, e.g. fra1 -> https://fra1.digitaloceanspaces.com;
+#              the SPACES_ENDPOINT* variables are for other buckets and unused here)
 # Long-term retention is a Spaces bucket lifecycle rule (see DEPLOY.md §6), not this job.
 on:
   schedule:
@@ -32,7 +33,7 @@ jobs:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          SPACES_BUCKET: ${{ vars.SPACES_BUCKET }}
+          SPACES_BUCKET: ${{ vars.SPACES_BUCKET_BACKUP }}
           SPACES_REGION: ${{ vars.DROPLET_REGION }}
         run: |
           set -euo pipefail
@@ -43,7 +44,7 @@ jobs:
           : "${BACKUP_PASSPHRASE:?set the BACKUP_PASSPHRASE secret}"
           : "${AWS_ACCESS_KEY_ID:?set the AWS_ACCESS_KEY_ID secret}"
           : "${AWS_SECRET_ACCESS_KEY:?set the AWS_SECRET_ACCESS_KEY secret}"
-          : "${SPACES_BUCKET:?set the SPACES_BUCKET variable}"
+          : "${SPACES_BUCKET:?set the SPACES_BUCKET_BACKUP variable}"
           : "${SPACES_REGION:?set the DROPLET_REGION variable}"
           # DO Spaces is S3-compatible; the aws CLI targets the REGIONAL endpoint (not a
           # bucket-specific host), so derive it from the region.
