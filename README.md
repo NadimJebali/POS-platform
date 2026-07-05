@@ -36,6 +36,11 @@ Server-rendered HTML under `/admin`, single account. Set `ADMIN_PASSWORD_HASH`
   manually unbind a machine to free a seat.
 - Edit global settings (renewal window, grace days, transfer limit, warn days) — they
   take effect on each client's next renewal, no app update needed.
+- Upload branding — a logo (used in the download-page header **and** the browser-tab
+  favicon) and an Open Graph share image (the preview shown when the page link is
+  posted to WhatsApp, Facebook, etc.). Raster only (PNG/JPEG/WebP), validated by magic
+  bytes, with generated defaults so the page always looks finished before anything is
+  uploaded.
 
 The session is an httpOnly cookie; login is rate limited. Issuing a code prompts
 "Has the customer paid?" so the subscription starts in the right state; billing status
@@ -48,10 +53,18 @@ The session is an httpOnly cookie; login is rate limited. Issuing a code prompts
 `GET /` is a public, server-rendered download page — **off by default**, enabled in
 **Admin → Settings**. It shows a "Download for Windows" button for the latest build and
 a version history (styled as a printed receipt), both read from `releases.json` in the
-updates directory. Content (product name, tagline, description, contact) is editable in
-settings. Zero-JS, self-contained, and responsive down to phones:
+updates directory. Content (product name, tagline, description, contact) and branding
+(logo, favicon, and the social share image) are editable in settings. Zero-JS,
+self-contained, and responsive down to phones:
 
 <p align="center"><img src="docs/download-page-mobile.png" width="300" alt="The download page on a phone" /></p>
+
+Branding assets are stored as BLOBs in SQLite (so they ride the same backup as the rest
+of the data, with no extra volume) and served from `/branding/logo`, `/branding/og-image`,
+and `/favicon.ico` with `ETag` + a `?v=` cache-buster so a replaced image refreshes in
+browser and social-scraper caches. The share card follows a fallback ladder — the
+uploaded Open Graph image, else the logo, else a committed generic banner — so a shared
+link always renders a real preview image.
 
 `/updates/*` is a static feed (installers + `latest.yml`) the POS app polls for
 background auto-updates. The vendor publishes to it from the POS-software repo
@@ -141,8 +154,14 @@ without updating the app's verifier in lockstep.
 
 ## Deployment
 
-`docker compose up -d` on the droplet after populating `.env` (`LICENSE_PRIVATE_KEY`,
-`DOMAIN`). Caddy handles TLS for `$DOMAIN`. SQLite persists on a named volume.
+Push to `main` and GitHub Actions does the rest: it builds the image and pushes it to
+Docker Hub, then over SSH ships the compose/Caddy config and the pinned image tag to the
+droplet, pulls that public image, and restarts — the droplet needs no GitHub access of
+its own (this repo is private), so a rotated token can't break a deploy. Caddy handles
+TLS for `$DOMAIN`; SQLite and the branding BLOBs persist in the bind-mounted `./data`.
+
+To run it by hand, `docker compose up -d` on the droplet after populating `.env`
+(`LICENSE_PRIVATE_KEY`, `DOMAIN`). See [`DEPLOY.md`](DEPLOY.md) for the full runbook.
 
 ## Security
 
