@@ -29,7 +29,7 @@ function receiptRows(releases) {
     .join('')
 }
 
-export function downloadPage({ settings, releases }) {
+export function downloadPage({ settings, releases, baseUrl = '', branding = {} }) {
   const name = settings.product_name || 'POS Software'
   const tagline = settings.product_tagline || 'The register that just works.'
   const description = settings.product_description || ''
@@ -37,6 +37,40 @@ export function downloadPage({ settings, releases }) {
   const email = settings.contact_email || ''
   const latest = releases[0] ?? null
   const monogram = escapeHtml(name.trim().charAt(0).toUpperCase() || 'P')
+
+  // Branding: a logo (header + favicon) and a share image, each with a ?v= cache-buster
+  // keyed on when it was uploaded so a replacement busts browser + scraper caches.
+  const hasLogo = !!branding.logo
+  const hasOg = !!branding.og
+  const logoSrc = `/branding/logo${hasLogo ? `?v=${branding.logo.updatedAt}` : ''}`
+  // The share image resolves through the same ladder the /branding route uses: OG →
+  // logo → generic banner. The card type must match the shape we actually serve: a
+  // landscape banner is a large card; a square logo is a summary thumbnail.
+  const ogVer = hasOg ? branding.og.updatedAt : hasLogo ? branding.logo.updatedAt : null
+  const ogImageUrl = `${baseUrl}/branding/og-image${ogVer != null ? `?v=${ogVer}` : ''}`
+  const twitterCard = hasOg ? 'summary_large_image' : hasLogo ? 'summary' : 'summary_large_image'
+  const shareDesc = description || `${tagline} Point of sale for cafés & restaurants — 14-day free trial.`
+  // og:image:width/height are only known for our generic banner (1200×630); omit them
+  // for an uploaded image of unknown dimensions.
+  const ogDims = !hasOg && !hasLogo ? '\n<meta property="og:image:width" content="1200">\n<meta property="og:image:height" content="630">' : ''
+
+  const social = `<meta property="og:type" content="website">
+<meta property="og:site_name" content="${escapeHtml(name)}">
+<meta property="og:title" content="${escapeHtml(tagline)}">
+<meta property="og:description" content="${escapeHtml(shareDesc)}">
+<meta property="og:url" content="${escapeHtml(baseUrl)}/">
+<meta property="og:image" content="${escapeHtml(ogImageUrl)}">${ogDims}
+<meta name="twitter:card" content="${twitterCard}">
+<meta name="twitter:title" content="${escapeHtml(tagline)}">
+<meta name="twitter:description" content="${escapeHtml(shareDesc)}">
+<meta name="twitter:image" content="${escapeHtml(ogImageUrl)}">
+<link rel="icon" href="${escapeHtml(logoSrc)}">`
+
+  // Header mark: the uploaded logo when present (object-fit cover in the tile), else the
+  // CSS monogram — so the default needs no image request at all.
+  const headerMark = hasLogo
+    ? `<img class="mark mark-img" src="${escapeHtml(logoSrc)}" alt="${escapeHtml(name)} logo" width="46" height="46">`
+    : `<div class="mark">${monogram}</div>`
 
   const cta = latest
     ? `<a class="cta" href="/updates/${encodeURIComponent(latest.file)}">
@@ -75,6 +109,7 @@ export function downloadPage({ settings, releases }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(name)} — point of sale for cafés &amp; restaurants</title>
 <meta name="description" content="${escapeHtml(tagline)}">
+${social}
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap" rel="stylesheet">
 <style>
@@ -110,6 +145,8 @@ export function downloadPage({ settings, releases }) {
     background: linear-gradient(135deg, var(--ember-hi), var(--ember));
     box-shadow: 0 8px 22px -8px oklch(0.72 0.14 65 / .7);
   }
+  /* Uploaded logo drops into the same 46px tile — cover-fit, no gradient/monogram. */
+  .mark-img { object-fit: cover; background: none; box-shadow: 0 8px 22px -8px oklch(0 0 0 / .55); }
   .brand { font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-weight: 600; font-size: 1.15rem; }
   header .spacer { flex: 1; }
   header .h-contact { font-size: .95rem; }
@@ -199,7 +236,7 @@ export function downloadPage({ settings, releases }) {
 <body>
 <div class="wrap">
   <header>
-    <div class="mark">${monogram}</div>
+    ${headerMark}
     <div class="brand">${escapeHtml(name)}</div>
     <div class="spacer"></div>
     ${email ? `<div class="h-contact"><a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></div>` : ''}

@@ -51,6 +51,12 @@ const STYLE = `
   .code { font-family: ui-monospace, monospace; font-size: 1.1rem; letter-spacing: .04em; background: #8882; padding: .5rem .7rem; border-radius: 6px; display: inline-block; }
   .card { border: 1px solid #8884; border-radius: 10px; padding: 1rem; margin: 1rem 0; }
   .err { color: #dc2626; } .muted { color: #8a8a8a; font-size: .85rem; }
+  .brand-row { display: flex; gap: 1rem; align-items: flex-start; }
+  .brand-ctl { display: grid; gap: .4rem; }
+  .brand-prev { border: 1px solid #8884; border-radius: 10px; background: #8881; object-fit: cover; display: block; }
+  .brand-prev--logo { width: 64px; height: 64px; }
+  .brand-prev--og { width: 200px; aspect-ratio: 1200 / 630; height: auto; }
+  .brand-rm { display: flex; align-items: center; gap: .4rem; color: inherit; font-size: .85rem; }
 `
 
 function layout(title, body, { authed = true } = {}) {
@@ -283,7 +289,44 @@ export function licenseDetailPage({ license, customer, machines, paidUntil, bill
   return layout(`License #${license.id}`, body)
 }
 
-export function settingsPage({ settings, saved, error, releases = [], latestVersion = null }) {
+// The logo + share-image uploader. A separate multipart form (the settings form above
+// is urlencoded). Previews hit the same /branding routes the live page uses, so they
+// show the current asset or its default; ?v= busts the preview when one is replaced.
+function brandingSection(branding = {}) {
+  const logoV = branding.logo ? `?v=${branding.logo.updatedAt}` : ''
+  // The share preview follows the serving ladder: its own version, else the logo's.
+  const ogV = branding.og ? `?v=${branding.og.updatedAt}` : branding.logo ? `?v=${branding.logo.updatedAt}` : ''
+  return `
+    <h2>Branding</h2>
+    <p class="muted">Your logo shows in the download-page header and the browser tab. The share image is the preview that appears when the page link is posted to WhatsApp, Facebook, etc.</p>
+    <form method="post" action="/admin/branding" enctype="multipart/form-data" style="display:grid; gap:1.5rem; max-width:32rem">
+      <div>
+        <label>Logo</label>
+        <div class="brand-row">
+          <img class="brand-prev brand-prev--logo" src="/branding/logo${logoV}" alt="Current logo" width="64" height="64">
+          <div class="brand-ctl">
+            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp">
+            <label class="brand-rm"><input type="checkbox" name="remove_logo" value="1" style="width:auto"> Remove (revert to monogram)</label>
+            <span class="muted">Square PNG, JPEG, or WebP, ≤512 KB. Also used as the browser-tab icon.</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label>Share image</label>
+        <div class="brand-row">
+          <img class="brand-prev brand-prev--og" src="/branding/og-image${ogV}" alt="Current share image">
+          <div class="brand-ctl">
+            <input type="file" name="og_image" accept="image/png,image/jpeg,image/webp">
+            <label class="brand-rm"><input type="checkbox" name="remove_og_image" value="1" style="width:auto"> Remove (revert to default)</label>
+            <span class="muted">Landscape ~1200×630, PNG/JPEG/WebP, ≤2 MB.</span>
+          </div>
+        </div>
+      </div>
+      <div><button>Save branding</button></div>
+    </form>`
+}
+
+export function settingsPage({ settings, saved, error, releases = [], latestVersion = null, branding = {} }) {
   const field = (key, label, hint) =>
     `<div><label for="${key}">${esc(label)}</label><input id="${key}" name="${key}" type="number" min="0" value="${esc(settings[key])}"><span class="muted">${esc(hint)}</span></div>`
   const text = (key, label, hint) =>
@@ -323,6 +366,8 @@ export function settingsPage({ settings, saved, error, releases = [], latestVers
       ${text('contact_email', 'Contact email', 'shown in the header and footer')}
       <div><button>Save settings</button></div>
     </form>
+
+    ${brandingSection(branding)}
 
     <h2>Published versions</h2>
     <p class="muted">Builds live on the download feed. The current (live) version can't be deleted — publish a newer build first, then delete the old one.</p>

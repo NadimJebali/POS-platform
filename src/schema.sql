@@ -61,6 +61,19 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+-- Branding assets (logo, Open Graph share image) uploaded from the admin. Stored as
+-- BLOBs so they ride the nightly SQLite backup and survive container rebuilds with no
+-- extra volume/mount. One row per key ('logo' | 'og_image'), served at /branding/<key>.
+-- updated_at drives the ETag + the ?v= cache-buster so a replaced image refreshes in
+-- browser AND social-scraper caches. CREATE ... IF NOT EXISTS also covers existing DBs
+-- (openDb re-applies this schema on every start), so no ALTER migration is needed.
+CREATE TABLE IF NOT EXISTS assets (
+  key          TEXT PRIMARY KEY,          -- 'logo' | 'og_image'
+  content_type TEXT    NOT NULL,          -- 'image/png' | 'image/jpeg' | 'image/webp'
+  bytes        BLOB    NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+
 -- Admin sessions. A row is a live login: the random token lives in an httpOnly
 -- cookie, and expired rows are ignored (and swept on access).
 CREATE TABLE IF NOT EXISTS sessions (

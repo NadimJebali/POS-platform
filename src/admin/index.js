@@ -23,9 +23,11 @@ import {
   unbindMachine,
   LicenseError
 } from '../licenses.js'
+import multipart from '@fastify/multipart'
 import { recordPayment } from '../payments.js'
 import { readReleases, currentLatestVersion, deleteRelease, ReleaseError } from '../releases.js'
 import { getAllSettings, setIntSetting, setTextSetting } from '../db.js'
+import { putAsset, deleteAsset, getAssetMeta, detectImageType, MAX_BYTES } from '../assets.js'
 import {
   loginPage,
   customersPage,
@@ -44,6 +46,8 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure, update
       settings: getAllSettings(db),
       releases: readReleases(updatesDir),
       latestVersion: currentLatestVersion(updatesDir),
+      // Meta drives the live previews + their ?v= cache-busters on the settings page.
+      branding: { logo: getAssetMeta(db, 'logo'), og: getAssetMeta(db, 'og_image') },
       ...extra
     })
 
@@ -53,6 +57,13 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure, update
   const cookieOpts = { httpOnly: true, sameSite: 'lax', secure: cookieSecure, path: '/admin' }
 
   app.register(async (admin) => {
+    // Branding uploads are multipart/form-data. Registered INSIDE this plugin so only
+    // the admin accepts file uploads (the public API keeps its JSON/urlencoded parsers).
+    // fileSize caps at the larger asset's limit; per-asset caps are enforced below.
+    await admin.register(multipart, {
+      limits: { fileSize: MAX_BYTES.og_image, files: 2, fields: 6, fieldSize: 100 }
+    })
+
     // Gate everything under /admin behind a valid session, except the login page.
     admin.addHook('onRequest', async (request, reply) => {
       const path = request.url.split('?')[0]
@@ -281,5 +292,44 @@ export function registerAdmin(app, { db, adminPasswordHash, cookieSecure, update
         throw err
       }
     })
+
+    // Branding: upload/replace/remove the logo and share image in one multipart form.
+    // Per asset: a ticked "remove" reverts to the default; otherwise a chosen file is
+    // validated (magic-byte type + per-asset size cap) and stored; an empty field is a
+    // no-op so untouched assets are left alone.
+    admin.post('/admin/branding', async (request, reply) => {
+      const removals = new Set()
+      const uploads = {}
+      try {
+        for await (const part of request.parts()) {
+          if (part.type === 'field') {
+            if ((part.fieldname === 'remove_logo' || part.fieldname === 'remove_og_image') && part.value) {
+              removals.add(part.fieldname === 'remove_logo' ? 'logo' : 'og_image')
+            }
+            continue
+          }
+          const key = part.fieldname === 'logo' || part.fieldname === 'og_image' ? part.fieldname : null
+          const buf = await part.toBuffer() // draining the stream is required even when ignored
+          if (!key || buf.length === 0) continue // unknown field or "no file chosen"
+          if (part.file.truncated || buf.length > MAX_BYTES[key]) {
+            throw new BrandingError(`${label(key)} is too large (max ${MAX_BYTES[key] / 1024} KB).`)
+          }
+          const type = detectImageType(buf)
+          if (!type) throw new BrandingError(`${label(key)} must be a PNG, JPEG, or WebP image.`)
+          uploads[key] = { type, buf }
+        }
+      } catch (err) {
+        if (err instanceof BrandingError) return sendHtml(reply, settingsView({ error: err.message }), 400)
+        throw err
+      }
+      // Apply removals first, then uploads (an upload wins if a file was also chosen).
+      for (const key of removals) deleteAsset(db, key)
+      for (const [key, { type, buf }] of Object.entries(uploads)) putAsset(db, key, type, buf)
+      return reply.redirect('/admin/settings?saved=1')
+    })
   })
 }
+
+// A validation failure in the branding upload — re-rendered on the settings page.
+class BrandingError extends Error {}
+const label = (key) => (key === 'logo' ? 'Logo' : 'Share image')
